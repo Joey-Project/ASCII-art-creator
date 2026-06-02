@@ -7,6 +7,7 @@ import type {
 } from "../domain/types";
 import { FEATURE_SIZE, extractFeatureFromDarkness } from "./features";
 import { canvasFont } from "./canvas";
+import { isAsciiGrapheme } from "./graphemes";
 
 const MISSING_GLYPH_SENTINELS = ["\u{10ffff}", "\uffff", "\ufffe"];
 const FALLBACK_FAMILIES = ["sans-serif", "serif", "monospace"];
@@ -177,13 +178,24 @@ function isRenderableGlyph(
   }
 
   if (
-    !GENERIC_FAMILIES.has(font.family) &&
+    shouldFilterAgainstFallbackSignatures(glyph, font) &&
     fallbackSignaturesFor(glyph, weight, sampleFontSize).has(rendered.signature)
   ) {
     return false;
   }
 
   return true;
+}
+
+export function shouldFilterAgainstFallbackSignatures(
+  glyph: string,
+  font: Pick<FontChoice, "family" | "source">,
+): boolean {
+  if (isAsciiGrapheme(glyph) || font.source === "local") {
+    return false;
+  }
+
+  return !GENERIC_FAMILIES.has(font.family);
 }
 
 function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: number): Set<string> {
