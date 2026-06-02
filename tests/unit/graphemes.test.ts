@@ -11,6 +11,19 @@ describe("graphemes", () => {
     expect(segmentGraphemes("A🙂❤️")).toEqual(["A", "🙂", "❤️"]);
   });
 
+  it("keeps common multi-code-point glyphs when Intl.Segmenter is unavailable", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "Segmenter");
+    Object.defineProperty(Intl, "Segmenter", { configurable: true, value: undefined });
+
+    try {
+      expect(segmentGraphemes("a\u0301👨‍👩‍👧‍👦❤️🇺🇸")).toEqual(["a\u0301", "👨‍👩‍👧‍👦", "❤️", "🇺🇸"]);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(Intl, "Segmenter", descriptor);
+      }
+    }
+  });
+
   it("deduplicates while preserving order", () => {
     expect(uniqueGraphemes("aab🙂🙂b")).toEqual(["a", "b", "🙂"]);
   });

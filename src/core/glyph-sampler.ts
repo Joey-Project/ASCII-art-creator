@@ -28,23 +28,26 @@ export async function buildGlyphCandidates(
   const selectedFonts = fonts.filter((font) => font.selected);
   const total = glyphs.length * selectedFonts.reduce((sum, font) => sum + font.weights.length, 0);
   const candidates: GlyphCandidate[] = [];
+  const sampleFontSize = glyphFeatureFontSize(settings);
   let completed = 0;
 
   for (const font of selectedFonts) {
-    await waitForFont(font.family, settings.fontSize);
+    await waitForFont(font.family, sampleFontSize);
 
     for (const weight of font.weights) {
       const missingGlyphSignatures = new Set(
         MISSING_GLYPH_SENTINELS.map(
-          (sentinel) => renderGlyphCandidate(sentinel, font, weight).signature,
+          (sentinel) => renderGlyphCandidate(sentinel, font, weight, sampleFontSize).signature,
         ),
       );
 
       for (const glyph of glyphs) {
-        const rendered = renderGlyphCandidate(glyph, font, weight);
+        const rendered = renderGlyphCandidate(glyph, font, weight, sampleFontSize);
         completed += 1;
 
-        if (isRenderableGlyph(glyph, font, weight, rendered, missingGlyphSignatures)) {
+        if (
+          isRenderableGlyph(glyph, font, weight, sampleFontSize, rendered, missingGlyphSignatures)
+        ) {
           candidates.push(rendered.candidate);
         }
 
@@ -71,8 +74,29 @@ export async function buildGlyphCandidates(
   return candidates;
 }
 
-function renderGlyphCandidate(glyph: string, font: FontChoice, weight: number): RenderedGlyph {
-  return renderGlyphWithFamily(glyph, font.family, font.label, font.id, weight, font.dataUrl);
+export function glyphFeatureFontSize(
+  settings: Pick<RenderSettings, "fontSize" | "cellHeight">,
+): number {
+  const cellHeight = Math.max(1, settings.cellHeight);
+  const scaledFontSize = (settings.fontSize / cellHeight) * FEATURE_SIZE;
+  return clampInteger(Math.round(scaledFontSize), 4, Math.round(FEATURE_SIZE * 2.5));
+}
+
+function renderGlyphCandidate(
+  glyph: string,
+  font: FontChoice,
+  weight: number,
+  sampleFontSize: number,
+): RenderedGlyph {
+  return renderGlyphWithFamily(
+    glyph,
+    font.family,
+    font.label,
+    font.id,
+    weight,
+    sampleFontSize,
+    font.dataUrl,
+  );
 }
 
 function renderGlyphWithFamily(
@@ -81,6 +105,7 @@ function renderGlyphWithFamily(
   fontLabel: string,
   fontId: string,
   weight: number,
+  sampleFontSize: number,
   fontDataUrl?: string,
 ): RenderedGlyph {
   const canvas = document.createElement("canvas");
@@ -95,7 +120,7 @@ function renderGlyphWithFamily(
   context.fillStyle = "#000000";
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.font = canvasFont(weight, Math.round(FEATURE_SIZE * 0.92), family);
+  context.font = canvasFont(weight, sampleFontSize, family);
   context.fillText(glyph, FEATURE_SIZE / 2, FEATURE_SIZE / 2 + FEATURE_SIZE * 0.04);
 
   const imageData = context.getImageData(0, 0, FEATURE_SIZE, FEATURE_SIZE);
@@ -126,6 +151,7 @@ function isRenderableGlyph(
   glyph: string,
   font: FontChoice,
   weight: number,
+  sampleFontSize: number,
   rendered: RenderedGlyph,
   missingGlyphSignatures: Set<string>,
 ): boolean {
@@ -143,7 +169,7 @@ function isRenderableGlyph(
 
   if (
     !GENERIC_FAMILIES.has(font.family) &&
-    fallbackSignaturesFor(glyph, weight).has(rendered.signature)
+    fallbackSignaturesFor(glyph, weight, sampleFontSize).has(rendered.signature)
   ) {
     return false;
   }
@@ -151,8 +177,8 @@ function isRenderableGlyph(
   return true;
 }
 
-function fallbackSignaturesFor(glyph: string, weight: number): Set<string> {
-  const cacheKey = `${glyph}:${weight}`;
+function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: number): Set<string> {
+  const cacheKey = `${glyph}:${weight}:${sampleFontSize}`;
   const cached = fallbackSignatureCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -161,11 +187,16 @@ function fallbackSignaturesFor(glyph: string, weight: number): Set<string> {
   const signatures = new Set(
     FALLBACK_FAMILIES.map(
       (family) =>
-        renderGlyphWithFamily(glyph, family, family, `fallback-${family}`, weight).signature,
+        renderGlyphWithFamily(glyph, family, family, `fallback-${family}`, weight, sampleFontSize)
+          .signature,
     ),
   );
   fallbackSignatureCache.set(cacheKey, signatures);
   return signatures;
+}
+
+function clampInteger(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
 }
 
 async function waitForFont(family: string, size: number): Promise<void> {

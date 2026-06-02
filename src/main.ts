@@ -351,10 +351,7 @@ function bindControls(): void {
     "input",
     cellMetricSetting("cellHeight"),
   );
-  getElement<HTMLInputElement>("font-size").addEventListener(
-    "input",
-    visualNumberSetting("fontSize"),
-  );
+  getElement<HTMLInputElement>("font-size").addEventListener("input", fontSizeSetting());
   getElement<HTMLInputElement>("density-window").addEventListener("input", (event) => {
     state.settings.densityWindow = Number((event.target as HTMLInputElement).value);
     setOutput("density-output", state.settings.densityWindow);
@@ -732,7 +729,7 @@ function cellMetricSetting(key: "cellWidth" | "cellHeight"): (event: Event) => v
 
     input.value = String(value);
     setNumericSetting(key, value);
-    if (state.settings.gridMode === "source-pixels") {
+    if (state.settings.gridMode === "source-pixels" || key === "cellHeight") {
       markNeedsRegenerate();
       return;
     }
@@ -746,14 +743,14 @@ function clampCellMetric(key: "cellWidth" | "cellHeight", value: number): number
   return Math.max(bounds.minimum, Math.min(bounds.maximum, value));
 }
 
-function visualNumberSetting(key: keyof RenderSettings): (event: Event) => void {
+function fontSizeSetting(): (event: Event) => void {
   return (event: Event) => {
     const input = event.target as HTMLInputElement;
-    const value = key === "fontSize" ? clampFontSize(Number(input.value)) : Number(input.value);
+    const value = clampFontSize(Number(input.value));
     if (Number.isFinite(value)) {
       input.value = String(value);
-      setNumericSetting(key, value);
-      applyVisualSettingsToMosaic();
+      setNumericSetting("fontSize", value);
+      markNeedsRegenerate();
     }
   };
 }

@@ -108,10 +108,12 @@ export function resolveGrid(
   if (settings.gridMode === "source-pixels") {
     const step = Math.max(1, settings.sourcePixelsPerGlyph);
     const cellAspectCompensation = settings.cellWidth / settings.cellHeight;
-    return {
-      columns: clampInteger(Math.round(sourceWidth / step), 8, 220),
-      rows: clampInteger(Math.round((sourceHeight / step) * cellAspectCompensation), 4, 220),
-    };
+    return fitGridToBounds(sourceWidth / step, (sourceHeight / step) * cellAspectCompensation, {
+      minColumns: 8,
+      maxColumns: 220,
+      minRows: 4,
+      maxRows: 220,
+    });
   }
 
   return {
@@ -129,13 +131,43 @@ export function recommendGridForImage(
   const area = Math.max(1, sourceWidth * sourceHeight);
   const sourcePixelsPerGlyph = clampInteger(Math.round(Math.sqrt(area / 8_500)), 4, 64);
   const cellAspectCompensation = cellWidth / cellHeight;
-  const columns = clampInteger(Math.round(sourceWidth / sourcePixelsPerGlyph), 32, 180);
-  const rows = clampInteger(
-    Math.round((sourceHeight / sourcePixelsPerGlyph) * cellAspectCompensation),
-    18,
-    180,
+  const { columns, rows } = fitGridToBounds(
+    sourceWidth / sourcePixelsPerGlyph,
+    (sourceHeight / sourcePixelsPerGlyph) * cellAspectCompensation,
+    {
+      minColumns: 32,
+      maxColumns: 180,
+      minRows: 18,
+      maxRows: 180,
+    },
   );
   return { columns, rows, sourcePixelsPerGlyph };
+}
+
+interface GridBounds {
+  minColumns: number;
+  maxColumns: number;
+  minRows: number;
+  maxRows: number;
+}
+
+function fitGridToBounds(
+  rawColumns: number,
+  rawRows: number,
+  bounds: GridBounds,
+): { columns: number; rows: number } {
+  const safeColumns = Math.max(1, rawColumns);
+  const safeRows = Math.max(1, rawRows);
+
+  let scale = Math.min(1, bounds.maxColumns / safeColumns, bounds.maxRows / safeRows);
+  if (safeColumns * scale < bounds.minColumns || safeRows * scale < bounds.minRows) {
+    scale = Math.max(scale, bounds.minColumns / safeColumns, bounds.minRows / safeRows);
+  }
+
+  return {
+    columns: clampInteger(Math.round(safeColumns * scale), bounds.minColumns, bounds.maxColumns),
+    rows: clampInteger(Math.round(safeRows * scale), bounds.minRows, bounds.maxRows),
+  };
 }
 
 function createDitherBuffer(columns: number, rows: number): number[][] {

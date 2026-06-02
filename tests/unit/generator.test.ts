@@ -57,4 +57,27 @@ describe("grid sizing", () => {
       (grid.columns * baseSettings.cellWidth) / (grid.rows * baseSettings.cellHeight);
     expect(outputAspect).toBeCloseTo(1920 / 1080, 1);
   });
+
+  it("preserves source-pixel aspect ratio when large images hit grid bounds", () => {
+    const wideGrid = resolveGrid(10_000, 1_000, {
+      ...baseSettings,
+      gridMode: "source-pixels",
+      sourcePixelsPerGlyph: 4,
+    });
+    const tallGrid = resolveGrid(1_000, 10_000, {
+      ...baseSettings,
+      gridMode: "source-pixels",
+      sourcePixelsPerGlyph: 4,
+    });
+
+    const wideAspect =
+      (wideGrid.columns * baseSettings.cellWidth) / (wideGrid.rows * baseSettings.cellHeight);
+    const tallAspect =
+      (tallGrid.columns * baseSettings.cellWidth) / (tallGrid.rows * baseSettings.cellHeight);
+
+    expect(wideGrid.columns).toBe(220);
+    expect(wideAspect).toBeCloseTo(10, 0);
+    expect(tallGrid.rows).toBe(220);
+    expect(tallAspect).toBeCloseTo(0.1, 1);
+  });
 });
