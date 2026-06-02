@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { readFile, stat } from "node:fs/promises";
 
 test("generates a mosaic from an uploaded image and exports all formats", async ({ page }) => {
@@ -33,10 +33,16 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
       format === "JPEG" ? "fixture.jpg" : `fixture.${format.toLowerCase()}`,
     );
     if (format === "SVG") {
-      expect(await readFile(path!, "utf8")).toContain("#123456");
+      const svg = await readFile(path!, "utf8");
+      expect(svg).toContain("<svg");
+      expect(svg).toContain("#123456");
     }
     if (format === "TXT") {
-      expect((await readFile(path!, "utf8")).trim().split("\n").length).toBeGreaterThan(0);
+      const text = await readFile(path!, "utf8");
+      expect(text.trim().split("\n").length).toBeGreaterThan(0);
+      expect(
+        Array.from(text, (glyph) => glyph.codePointAt(0) ?? 0).every((code) => code <= 0x7f),
+      ).toBe(true);
     }
   }
 });
@@ -48,6 +54,9 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
   await page.getByLabel("CJK").check();
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  const initialCellCount = await statNumber(page, "#cell-count");
+  const plannedCandidateCount = await statNumber(page, "#candidate-count");
+  expect(plannedCandidateCount).toBeGreaterThan(500);
 
   await page.locator("#source-pixels").evaluate((element) => {
     const input = element as HTMLInputElement;
@@ -58,6 +67,14 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
 
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   await expect(page.locator("#candidate-count")).toContainText("renderable");
+  const sourcePixelCellCount = await statNumber(page, "#cell-count");
+  expect(sourcePixelCellCount).toBeLessThan(initialCellCount);
+
+  await page.getByLabel("Cell width").fill("20");
+  await expect(page.locator("#status")).toContainText("Settings changed");
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  expect(await statNumber(page, "#cell-count")).not.toBe(sourcePixelCellCount);
 });
 
 test("keeps the mobile layout usable", async ({ page, isMobile }) => {
@@ -74,3 +91,9 @@ test("keeps the mobile layout usable", async ({ page, isMobile }) => {
   expect(workspace).not.toBeNull();
   expect(workspace!.y).toBeGreaterThan(controls!.y);
 });
+
+async function statNumber(page: Page, selector: string): Promise<number> {
+  const text = await page.locator(selector).textContent();
+  const match = text?.match(/\d[\d,]*/);
+  return Number(match?.[0].replaceAll(",", "") ?? 0);
+}

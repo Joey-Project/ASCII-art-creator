@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mosaicToSvg, mosaicToText } from "../../src/core/exporters";
+import { mosaicToSvg, mosaicToText, validateExportSize } from "../../src/core/exporters";
 import type { Mosaic } from "../../src/domain/types";
 
 const mosaic: Mosaic = {
@@ -25,6 +25,25 @@ describe("exporters", () => {
     expect(svg).toContain("&amp;");
     expect(svg).toContain("&lt;");
     expect(svg).toContain("&gt;");
+  });
+
+  it("reports normal raster export dimensions", () => {
+    expect(validateExportSize(mosaic, 2)).toEqual({ width: 40, height: 48, pixels: 1920 });
+  });
+
+  it("rejects oversized raster export dimensions", () => {
+    expect(() =>
+      validateExportSize(
+        {
+          ...mosaic,
+          columns: 180,
+          rows: 180,
+          cellWidth: 28,
+          cellHeight: 36,
+        },
+        6,
+      ),
+    ).toThrow(/Export is too large/);
   });
 });
 

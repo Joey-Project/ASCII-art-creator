@@ -7,6 +7,15 @@ export interface ExportOptions {
   scale: number;
 }
 
+export interface ExportSize {
+  width: number;
+  height: number;
+  pixels: number;
+}
+
+export const MAX_EXPORT_DIMENSION = 12_000;
+export const MAX_EXPORT_PIXELS = 48_000_000;
+
 export async function exportMosaic(mosaic: Mosaic, options: ExportOptions): Promise<void> {
   switch (options.format) {
     case "txt":
@@ -76,12 +85,38 @@ export function mosaicToSvg(mosaic: Mosaic): string {
   ].join("");
 }
 
+export function validateExportSize(mosaic: Mosaic, scale: number): ExportSize {
+  if (!Number.isFinite(scale) || scale <= 0) {
+    throw new Error("Export scale must be a positive number");
+  }
+
+  const width = Math.max(1, Math.round(mosaic.columns * mosaic.cellWidth * scale));
+  const height = Math.max(1, Math.round(mosaic.rows * mosaic.cellHeight * scale));
+  const pixels = width * height;
+
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !Number.isFinite(pixels) ||
+    width > MAX_EXPORT_DIMENSION ||
+    height > MAX_EXPORT_DIMENSION ||
+    pixels > MAX_EXPORT_PIXELS
+  ) {
+    throw new Error(
+      `Export is too large (${width.toLocaleString()} x ${height.toLocaleString()}). Reduce rows, columns, cell size, or output scale.`,
+    );
+  }
+
+  return { width, height, pixels };
+}
+
 async function downloadCanvas(
   mosaic: Mosaic,
   scale: number,
   type: "image/png" | "image/jpeg",
   fileName: string,
 ): Promise<void> {
+  validateExportSize(mosaic, scale);
   const exportMosaic =
     type === "image/jpeg" && mosaic.transparentBackground
       ? { ...mosaic, transparentBackground: false, background: "#ffffff" }
@@ -92,6 +127,7 @@ async function downloadCanvas(
 }
 
 async function downloadPdf(mosaic: Mosaic, scale: number): Promise<void> {
+  validateExportSize(mosaic, scale);
   const canvas = renderMosaicToCanvas(mosaic, scale);
   const imageData = canvas.toDataURL("image/png");
   const width = canvas.width;

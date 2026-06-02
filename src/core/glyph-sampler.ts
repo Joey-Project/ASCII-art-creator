@@ -42,7 +42,7 @@ export async function buildGlyphCandidates(
     phase: "glyphs",
     completed: total,
     total,
-    message: `Indexed ${candidates.toLocaleString()} renderable glyph samples`,
+    message: `Indexed ${candidates.length.toLocaleString()} renderable glyph samples`,
   });
 
   return candidates;

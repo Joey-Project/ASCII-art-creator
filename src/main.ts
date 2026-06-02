@@ -10,7 +10,7 @@ import type {
 import { DEFAULT_USER_GLYPHS, GLYPH_PACKS } from "./domain/glyph-packs";
 import { combineGlyphSources } from "./core/graphemes";
 import { generateMosaic, recommendGridForImage } from "./core/generator";
-import { applySettingsToPreviewCanvas } from "./core/canvas";
+import { applySettingsToPreviewCanvas, cssFontFamily } from "./core/canvas";
 import { colorFromString } from "./core/colors";
 import { createSampleImage, loadImageFromFile } from "./core/source-image";
 import {
@@ -50,6 +50,7 @@ interface AppState {
   mosaic: Mosaic | null;
   isGenerating: boolean;
   needsRegenerate: boolean;
+  generationVersion: number;
 }
 
 const state: AppState = {
@@ -62,6 +63,7 @@ const state: AppState = {
   mosaic: null,
   isGenerating: false,
   needsRegenerate: false,
+  generationVersion: 0,
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -244,6 +246,7 @@ function bindControls(): void {
     state.source = await loadImageFromFile(file);
     state.sourceName = file.name;
     applyRecommendedGrid(state.source);
+    markNeedsRegenerate();
     await generate();
   });
 
@@ -251,6 +254,7 @@ function bindControls(): void {
     state.source = createSampleImage();
     state.sourceName = "sample-gradient";
     applyRecommendedGrid(state.source);
+    markNeedsRegenerate();
     await generate();
   });
 
@@ -316,11 +320,11 @@ function bindControls(): void {
   });
   getElement<HTMLInputElement>("cell-width").addEventListener(
     "input",
-    visualNumberSetting("cellWidth"),
+    cellMetricSetting("cellWidth"),
   );
   getElement<HTMLInputElement>("cell-height").addEventListener(
     "input",
-    visualNumberSetting("cellHeight"),
+    cellMetricSetting("cellHeight"),
   );
   getElement<HTMLInputElement>("font-size").addEventListener(
     "input",
@@ -399,11 +403,15 @@ function bindControls(): void {
         return;
       }
 
-      await exportMosaic(state.mosaic, {
-        format: button.dataset.export as ExportFormat,
-        scale: state.settings.outputScale,
-      });
-      setStatus(`Exported ${button.dataset.export?.toUpperCase()}`);
+      try {
+        await exportMosaic(state.mosaic, {
+          format: button.dataset.export as ExportFormat,
+          scale: state.settings.outputScale,
+        });
+        setStatus(`Exported ${button.dataset.export?.toUpperCase()}`);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Export failed");
+      }
     });
   }
 }
@@ -437,17 +445,29 @@ function renderFontList(): void {
   for (const font of state.fonts) {
     const label = document.createElement("label");
     label.className = "font-row";
-    label.innerHTML = `
-      <input type="checkbox" ${font.selected ? "checked" : ""} />
-      <span class="font-name" style="font-family: ${font.family}">${font.label}</span>
-      <span class="font-source">${font.source}</span>
-      <span class="font-weights">${font.weights.join(", ")}</span>
-    `;
-    label.querySelector("input")!.addEventListener("change", (event) => {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = font.selected;
+
+    const fontName = document.createElement("span");
+    fontName.className = "font-name";
+    fontName.style.fontFamily = cssFontFamily(font.family);
+    fontName.textContent = font.label;
+
+    const fontSource = document.createElement("span");
+    fontSource.className = "font-source";
+    fontSource.textContent = font.source;
+
+    const fontWeights = document.createElement("span");
+    fontWeights.className = "font-weights";
+    fontWeights.textContent = font.weights.join(", ");
+
+    checkbox.addEventListener("change", (event) => {
       font.selected = (event.target as HTMLInputElement).checked;
       markNeedsRegenerate();
       updateStats();
     });
+    label.append(checkbox, fontName, fontSource, fontWeights);
     container.append(label);
   }
 
@@ -487,6 +507,7 @@ function syncColorModeButtons(): void {
 
 async function generate(): Promise<void> {
   if (state.isGenerating) {
+    setStatus("Generation is already running; changed settings will need a new pass");
     return;
   }
 
@@ -495,13 +516,18 @@ async function generate(): Promise<void> {
     state.sourceName = "sample-gradient";
   }
 
+  const sourceSnapshot = state.source;
+  const sourceNameSnapshot = state.sourceName;
+  const settingsSnapshot: RenderSettings = { ...state.settings };
+  const fontsSnapshot = cloneFonts(state.fonts);
   const glyphs = activeGlyphs();
+  const generationVersion = state.generationVersion;
   if (glyphs.length === 0) {
     setStatus("Add at least one glyph");
     return;
   }
 
-  const selectedFonts = state.fonts.filter((font) => font.selected);
+  const selectedFonts = fontsSnapshot.filter((font) => font.selected);
   if (selectedFonts.length === 0) {
     setStatus("Select at least one font");
     return;
@@ -512,15 +538,25 @@ async function generate(): Promise<void> {
 
   try {
     const mosaic = await generateMosaic({
-      source: state.source,
-      sourceName: state.sourceName,
+      source: sourceSnapshot,
+      sourceName: sourceNameSnapshot,
       glyphs,
-      fonts: state.fonts,
-      settings: state.settings,
-      onProgress: renderProgress,
+      fonts: fontsSnapshot,
+      settings: settingsSnapshot,
+      onProgress: (progress) => {
+        if (generationVersion === state.generationVersion) {
+          renderProgress(progress);
+        }
+      },
     });
+    if (generationVersion !== state.generationVersion) {
+      setStatus("Settings changed during generation; generate again to apply the latest inputs");
+      return;
+    }
+
     state.mosaic = mosaic;
     state.needsRegenerate = false;
+    syncMosaicVisualSettings(state.mosaic, state.settings);
     drawPreview();
     updateStats();
     setStatus("Mosaic ready");
@@ -556,17 +592,7 @@ function applyVisualSettingsToMosaic(): void {
     return;
   }
 
-  state.mosaic.cellWidth = state.settings.cellWidth;
-  state.mosaic.cellHeight = state.settings.cellHeight;
-  state.mosaic.fontSize = state.settings.fontSize;
-  state.mosaic.background = state.settings.background;
-  state.mosaic.transparentBackground = state.settings.transparentBackground;
-
-  for (const cell of state.mosaic.cells) {
-    cell.background = state.settings.background;
-    cell.foreground = visualForegroundForCell(cell);
-  }
-
+  syncMosaicVisualSettings(state.mosaic, state.settings);
   drawPreview();
   setStatus(
     state.needsRegenerate
@@ -575,16 +601,29 @@ function applyVisualSettingsToMosaic(): void {
   );
 }
 
-function visualForegroundForCell(cell: Mosaic["cells"][number]): string {
-  if (state.settings.colorMode === "mono") {
-    return state.settings.foreground;
+function syncMosaicVisualSettings(mosaic: Mosaic, settings: RenderSettings): void {
+  mosaic.cellWidth = settings.cellWidth;
+  mosaic.cellHeight = settings.cellHeight;
+  mosaic.fontSize = settings.fontSize;
+  mosaic.background = settings.background;
+  mosaic.transparentBackground = settings.transparentBackground;
+
+  for (const cell of mosaic.cells) {
+    cell.background = settings.background;
+    cell.foreground = visualForegroundForCell(cell, settings);
+  }
+}
+
+function visualForegroundForCell(cell: Mosaic["cells"][number], settings: RenderSettings): string {
+  if (settings.colorMode === "mono") {
+    return settings.foreground;
   }
 
-  switch (state.settings.colorStrategy) {
+  switch (settings.colorStrategy) {
     case "source":
       return cell.sourceColor;
     case "uniform":
-      return state.settings.foreground;
+      return settings.foreground;
     case "glyph":
       return colorFromString(cell.glyph);
     case "font":
@@ -592,14 +631,17 @@ function visualForegroundForCell(cell: Mosaic["cells"][number]): string {
     case "glyph-font":
       return colorFromString(`${cell.glyph}:${cell.fontFamily}:${cell.weight}`);
     default:
-      return state.settings.foreground;
+      return settings.foreground;
   }
 }
 
 function markNeedsRegenerate(): void {
+  state.generationVersion += 1;
   if (state.mosaic) {
     state.needsRegenerate = true;
     setStatus("Settings changed; regenerate the mosaic before exporting");
+  } else if (state.isGenerating) {
+    setStatus("Settings changed during generation; generate again after this pass");
   }
 }
 
@@ -655,6 +697,23 @@ function numberSetting(key: keyof RenderSettings): (event: Event) => void {
   };
 }
 
+function cellMetricSetting(key: "cellWidth" | "cellHeight"): (event: Event) => void {
+  return (event: Event) => {
+    const value = Number((event.target as HTMLInputElement).value);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    setNumericSetting(key, value);
+    if (state.settings.gridMode === "source-pixels") {
+      markNeedsRegenerate();
+      return;
+    }
+
+    applyVisualSettingsToMosaic();
+  };
+}
+
 function visualNumberSetting(key: keyof RenderSettings): (event: Event) => void {
   return (event: Event) => {
     const value = Number((event.target as HTMLInputElement).value);
@@ -663,6 +722,13 @@ function visualNumberSetting(key: keyof RenderSettings): (event: Event) => void 
       applyVisualSettingsToMosaic();
     }
   };
+}
+
+function cloneFonts(fonts: FontChoice[]): FontChoice[] {
+  return fonts.map((font) => ({
+    ...font,
+    weights: [...font.weights],
+  }));
 }
 
 function setNumericSetting(key: keyof RenderSettings, value: number): void {
