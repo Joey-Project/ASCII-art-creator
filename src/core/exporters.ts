@@ -63,6 +63,7 @@ export function mosaicToSvg(mosaic: Mosaic): string {
   const background = mosaic.transparentBackground
     ? ""
     : `<rect width="100%" height="100%" fill="${escapeXml(mosaic.background)}" />`;
+  const fontFaces = svgFontFaceDefinitions(mosaic);
   const text = mosaic.cells
     .map((cell, index) => {
       const x = index % mosaic.columns;
@@ -79,10 +80,24 @@ export function mosaicToSvg(mosaic: Mosaic): string {
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    fontFaces,
     background,
     text,
     "</svg>",
   ].join("");
+}
+
+export function mosaicForCanvasExport(mosaic: Mosaic, type: "image/png" | "image/jpeg"): Mosaic {
+  if (type !== "image/jpeg" || !mosaic.transparentBackground) {
+    return mosaic;
+  }
+
+  return {
+    ...mosaic,
+    transparentBackground: false,
+    background: "#ffffff",
+    cells: mosaic.cells.map((cell) => ({ ...cell, background: "#ffffff" })),
+  };
 }
 
 export function validateExportSize(mosaic: Mosaic, scale: number): ExportSize {
@@ -117,10 +132,7 @@ async function downloadCanvas(
   fileName: string,
 ): Promise<void> {
   validateExportSize(mosaic, scale);
-  const exportMosaic =
-    type === "image/jpeg" && mosaic.transparentBackground
-      ? { ...mosaic, transparentBackground: false, background: "#ffffff" }
-      : mosaic;
+  const exportMosaic = mosaicForCanvasExport(mosaic, type);
   const canvas = renderMosaicToCanvas(exportMosaic, scale);
   const blob = await canvasToBlob(canvas, type, type === "image/jpeg" ? 0.92 : undefined);
   downloadBlob(fileName, blob);
@@ -175,6 +187,31 @@ function downloadBlob(fileName: string, blob: Blob): void {
 
 function baseName(name: string): string {
   return name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "-") || "glyph-mosaic";
+}
+
+function svgFontFaceDefinitions(mosaic: Mosaic): string {
+  const fontFaces = new Map<string, string>();
+  for (const cell of mosaic.cells) {
+    if (cell.fontDataUrl && !fontFaces.has(cell.fontFamily)) {
+      fontFaces.set(cell.fontFamily, cell.fontDataUrl);
+    }
+  }
+
+  if (fontFaces.size === 0) {
+    return "";
+  }
+
+  const css = Array.from(fontFaces.entries())
+    .map(
+      ([family, dataUrl]) =>
+        `@font-face{font-family:${cssFontFamily(family)};src:url("${escapeCssString(dataUrl)}");}`,
+    )
+    .join("");
+  return `<defs><style><![CDATA[${css}]]></style></defs>`;
+}
+
+function escapeCssString(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("]]>", "");
 }
 
 function escapeXml(value: string): string {

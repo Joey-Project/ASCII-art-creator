@@ -96,6 +96,8 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
 
   await page.getByLabel("Cell width").fill("100000");
   await expect(page.getByLabel("Cell width")).toHaveValue("28");
+  await page.getByLabel("Font size").fill("-1");
+  await expect(page.getByLabel("Font size")).toHaveValue("7");
 });
 
 test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async ({ page }) => {

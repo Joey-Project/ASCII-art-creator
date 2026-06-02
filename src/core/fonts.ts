@@ -99,25 +99,37 @@ export async function registerUploadedFonts(files: FileList | File[]): Promise<F
 
   for (const [index, file] of list.entries()) {
     const family = `Uploaded ${slug(file.name)} ${Date.now()} ${index}`;
-    const url = URL.createObjectURL(file);
-    try {
-      const face = new FontFace(family, `url(${url})`);
-      await face.load();
-      document.fonts.add(face);
-      result.push({
-        id: `uploaded-${slug(file.name)}-${Date.now()}-${index}`,
-        family,
-        label: file.name,
-        source: "uploaded",
-        selected: true,
-        weights: [400, 700],
-      });
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    const dataUrl = await fileToDataUrl(file);
+    const face = new FontFace(family, `url(${dataUrl})`);
+    await face.load();
+    document.fonts.add(face);
+    result.push({
+      id: `uploaded-${slug(file.name)}-${Date.now()}-${index}`,
+      family,
+      label: file.name,
+      source: "uploaded",
+      selected: true,
+      weights: [400, 700],
+      dataUrl,
+    });
   }
 
   return result;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Font file could not be read"));
+      }
+    };
+    reader.onerror = () => reject(new Error("Font file could not be read"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function slug(value: string): string {

@@ -311,7 +311,9 @@ function bindControls(): void {
       const newFonts = localFonts.filter((font) => !existing.has(`${font.source}:${font.family}`));
       state.fonts.push(...newFonts);
       renderFontList();
-      markNeedsRegenerate();
+      if (newFonts.some((font) => font.selected)) {
+        markNeedsRegenerate();
+      }
       setStatus(`Found ${newFonts.length} local font families`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Local font scan failed");
@@ -746,12 +748,18 @@ function clampCellMetric(key: "cellWidth" | "cellHeight", value: number): number
 
 function visualNumberSetting(key: keyof RenderSettings): (event: Event) => void {
   return (event: Event) => {
-    const value = Number((event.target as HTMLInputElement).value);
+    const input = event.target as HTMLInputElement;
+    const value = key === "fontSize" ? clampFontSize(Number(input.value)) : Number(input.value);
     if (Number.isFinite(value)) {
+      input.value = String(value);
       setNumericSetting(key, value);
       applyVisualSettingsToMosaic();
     }
   };
+}
+
+function clampFontSize(value: number): number {
+  return Math.max(7, Math.min(34, value));
 }
 
 function cloneFonts(fonts: FontChoice[]): FontChoice[] {

@@ -1,7 +1,6 @@
 import type { FontChoice, GlyphCandidate, ProgressCallback, RenderSettings } from "../domain/types";
 import { FEATURE_SIZE, extractFeatureFromDarkness } from "./features";
 import { canvasFont } from "./canvas";
-import { isAsciiGrapheme } from "./graphemes";
 
 const MISSING_GLYPH_SENTINELS = ["\u{10ffff}", "\uffff", "\ufffe"];
 const FALLBACK_FAMILIES = ["sans-serif", "serif", "monospace"];
@@ -73,7 +72,7 @@ export async function buildGlyphCandidates(
 }
 
 function renderGlyphCandidate(glyph: string, font: FontChoice, weight: number): RenderedGlyph {
-  return renderGlyphWithFamily(glyph, font.family, font.label, font.id, weight);
+  return renderGlyphWithFamily(glyph, font.family, font.label, font.id, weight, font.dataUrl);
 }
 
 function renderGlyphWithFamily(
@@ -82,6 +81,7 @@ function renderGlyphWithFamily(
   fontLabel: string,
   fontId: string,
   weight: number,
+  fontDataUrl?: string,
 ): RenderedGlyph {
   const canvas = document.createElement("canvas");
   canvas.width = FEATURE_SIZE;
@@ -114,6 +114,7 @@ function renderGlyphWithFamily(
       glyph,
       fontFamily: family,
       fontLabel,
+      fontDataUrl,
       weight,
       features: extractFeatureFromDarkness(values),
     },
@@ -142,7 +143,6 @@ function isRenderableGlyph(
 
   if (
     !GENERIC_FAMILIES.has(font.family) &&
-    !isAsciiGrapheme(glyph) &&
     fallbackSignaturesFor(glyph, weight).has(rendered.signature)
   ) {
     return false;

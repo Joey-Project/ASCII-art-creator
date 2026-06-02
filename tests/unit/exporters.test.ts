@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mosaicToSvg, mosaicToText, validateExportSize } from "../../src/core/exporters";
+import {
+  mosaicForCanvasExport,
+  mosaicToSvg,
+  mosaicToText,
+  validateExportSize,
+} from "../../src/core/exporters";
 import type { Mosaic } from "../../src/domain/types";
 
 const mosaic: Mosaic = {
@@ -27,6 +32,22 @@ describe("exporters", () => {
     expect(svg).toContain("&gt;");
   });
 
+  it("embeds uploaded fonts in SVG output", () => {
+    const svg = mosaicToSvg({
+      ...mosaic,
+      cells: [
+        {
+          ...makeCell("A"),
+          fontFamily: "Uploaded Demo",
+          fontDataUrl: "data:font/woff2;base64,AAAA",
+        },
+      ],
+    });
+    expect(svg).toContain("@font-face");
+    expect(svg).toContain("Uploaded Demo");
+    expect(svg).toContain("data:font/woff2;base64,AAAA");
+  });
+
   it("reports normal raster export dimensions", () => {
     expect(validateExportSize(mosaic, 2)).toEqual({ width: 40, height: 48, pixels: 1920 });
   });
@@ -44,6 +65,22 @@ describe("exporters", () => {
         6,
       ),
     ).toThrow(/Export is too large/);
+  });
+
+  it("flattens transparent JPEG exports to white cell backgrounds", () => {
+    const flattened = mosaicForCanvasExport(
+      {
+        ...mosaic,
+        background: "#123456",
+        transparentBackground: true,
+        cells: mosaic.cells.map((cell) => ({ ...cell, background: "#123456" })),
+      },
+      "image/jpeg",
+    );
+
+    expect(flattened.transparentBackground).toBe(false);
+    expect(flattened.background).toBe("#ffffff");
+    expect(flattened.cells.every((cell) => cell.background === "#ffffff")).toBe(true);
   });
 });
 
