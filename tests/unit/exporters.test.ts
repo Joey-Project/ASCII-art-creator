@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertSvgFontsExportable,
   mosaicForCanvasExport,
   mosaicToSvg,
   mosaicToText,
@@ -48,6 +49,22 @@ describe("exporters", () => {
     expect(svg).toContain("data:font/woff2;base64,AAAA");
   });
 
+  it("rejects SVG export for local fonts that cannot be embedded", () => {
+    expect(() =>
+      assertSvgFontsExportable({
+        ...mosaic,
+        cells: [
+          {
+            ...makeCell("A"),
+            fontFamily: "Local Demo",
+            fontLabel: "Local Demo",
+            fontSource: "local",
+          },
+        ],
+      }),
+    ).toThrow(/Local Font Access fonts/);
+  });
+
   it("reports normal raster export dimensions", () => {
     expect(validateExportSize(mosaic, 2)).toEqual({ width: 40, height: 48, pixels: 1920 });
   });
@@ -89,6 +106,7 @@ function makeCell(glyph: string): Mosaic["cells"][number] {
     glyph,
     fontFamily: "monospace",
     fontLabel: "Monospace",
+    fontSource: "builtin",
     weight: 400,
     foreground: "#000000",
     background: "#ffffff",

@@ -49,6 +49,7 @@ function makeCandidate(glyph: string, density: number): GlyphCandidate {
     glyph,
     fontFamily: "monospace",
     fontLabel: "Monospace",
+    fontSource: "builtin",
     weight: 400,
     features: { ...emptyFeature(), density },
   };

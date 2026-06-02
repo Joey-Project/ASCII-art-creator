@@ -67,6 +67,7 @@ export interface GlyphCandidate {
   glyph: string;
   fontFamily: string;
   fontLabel: string;
+  fontSource: FontSource;
   fontDataUrl?: string;
   weight: number;
   features: GlyphFeature;
@@ -83,6 +84,7 @@ export interface MosaicCell {
   glyph: string;
   fontFamily: string;
   fontLabel: string;
+  fontSource: FontSource;
   fontDataUrl?: string;
   weight: number;
   foreground: string;

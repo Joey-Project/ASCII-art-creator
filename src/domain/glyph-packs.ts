@@ -1,7 +1,5 @@
 import type { GlyphPack } from "./types";
 
-export const ASCII_GRADIENT = " .:-=+*#%@";
-
 export const ASCII_PRINTABLE = Array.from({ length: 95 }, (_, index) =>
   String.fromCharCode(index + 32),
 ).join("");
@@ -91,5 +89,3 @@ export const GLYPH_PACKS: GlyphPack[] = [
     asciiOnly: false,
   },
 ];
-
-export const DEFAULT_USER_GLYPHS = ASCII_GRADIENT;

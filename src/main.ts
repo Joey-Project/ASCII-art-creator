@@ -7,7 +7,7 @@ import type {
   Mosaic,
   RenderSettings,
 } from "./domain/types";
-import { DEFAULT_USER_GLYPHS, GLYPH_PACKS } from "./domain/glyph-packs";
+import { GLYPH_PACKS } from "./domain/glyph-packs";
 import { combineGlyphSources } from "./core/graphemes";
 import { generateMosaic, recommendGridForImage } from "./core/generator";
 import { applySettingsToPreviewCanvas, cssFontFamily } from "./core/canvas";
@@ -57,7 +57,7 @@ const state: AppState = {
   settings: { ...DEFAULT_SETTINGS },
   fonts: structuredClone(BUILTIN_FONTS),
   enabledPacks: new Set(GLYPH_PACKS.filter((pack) => pack.defaultEnabled).map((pack) => pack.id)),
-  userGlyphs: DEFAULT_USER_GLYPHS,
+  userGlyphs: "",
   source: null,
   sourceName: "sample",
   mosaic: null,

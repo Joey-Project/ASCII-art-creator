@@ -1,4 +1,10 @@
-import type { FontChoice, GlyphCandidate, ProgressCallback, RenderSettings } from "../domain/types";
+import type {
+  FontChoice,
+  FontSource,
+  GlyphCandidate,
+  ProgressCallback,
+  RenderSettings,
+} from "../domain/types";
 import { FEATURE_SIZE, extractFeatureFromDarkness } from "./features";
 import { canvasFont } from "./canvas";
 
@@ -95,6 +101,7 @@ function renderGlyphCandidate(
     font.id,
     weight,
     sampleFontSize,
+    font.source,
     font.dataUrl,
   );
 }
@@ -106,6 +113,7 @@ function renderGlyphWithFamily(
   fontId: string,
   weight: number,
   sampleFontSize: number,
+  fontSource: FontSource,
   fontDataUrl?: string,
 ): RenderedGlyph {
   const canvas = document.createElement("canvas");
@@ -139,6 +147,7 @@ function renderGlyphWithFamily(
       glyph,
       fontFamily: family,
       fontLabel,
+      fontSource,
       fontDataUrl,
       weight,
       features: extractFeatureFromDarkness(values),
@@ -187,8 +196,15 @@ function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: nu
   const signatures = new Set(
     FALLBACK_FAMILIES.map(
       (family) =>
-        renderGlyphWithFamily(glyph, family, family, `fallback-${family}`, weight, sampleFontSize)
-          .signature,
+        renderGlyphWithFamily(
+          glyph,
+          family,
+          family,
+          `fallback-${family}`,
+          weight,
+          sampleFontSize,
+          "builtin",
+        ).signature,
     ),
   );
   fallbackSignatureCache.set(cacheKey, signatures);

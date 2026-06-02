@@ -58,6 +58,7 @@ export function mosaicToText(mosaic: Mosaic): string {
 }
 
 export function mosaicToSvg(mosaic: Mosaic): string {
+  assertSvgFontsExportable(mosaic);
   const width = mosaic.columns * mosaic.cellWidth;
   const height = mosaic.rows * mosaic.cellHeight;
   const background = mosaic.transparentBackground
@@ -85,6 +86,20 @@ export function mosaicToSvg(mosaic: Mosaic): string {
     text,
     "</svg>",
   ].join("");
+}
+
+export function assertSvgFontsExportable(mosaic: Mosaic): void {
+  const localFonts = new Set(
+    mosaic.cells
+      .filter((cell) => cell.fontSource === "local" && !cell.fontDataUrl)
+      .map((cell) => cell.fontLabel),
+  );
+
+  if (localFonts.size > 0) {
+    throw new Error(
+      `SVG export cannot preserve Local Font Access fonts (${Array.from(localFonts).join(", ")}). Use PNG, JPEG, PDF, or upload the font file before exporting SVG.`,
+    );
+  }
 }
 
 export function mosaicForCanvasExport(mosaic: Mosaic, type: "image/png" | "image/jpeg"): Mosaic {

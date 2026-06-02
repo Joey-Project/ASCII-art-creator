@@ -103,8 +103,11 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
 test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("ASCII").uncheck();
-  await page.getByLabel("User glyphs").fill("Ω");
   await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Add at least one glyph");
+
+  await page.getByLabel("User glyphs").fill("Ω");
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 
   const txtDownload = await Promise.all([
