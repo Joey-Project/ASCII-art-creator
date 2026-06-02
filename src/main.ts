@@ -11,6 +11,7 @@ import { DEFAULT_USER_GLYPHS, GLYPH_PACKS } from "./domain/glyph-packs";
 import { combineGlyphSources } from "./core/graphemes";
 import { generateMosaic, recommendGridForImage } from "./core/generator";
 import { applySettingsToPreviewCanvas } from "./core/canvas";
+import { colorFromString } from "./core/colors";
 import { createSampleImage, loadImageFromFile } from "./core/source-image";
 import {
   BUILTIN_FONTS,
@@ -48,6 +49,7 @@ interface AppState {
   sourceName: string;
   mosaic: Mosaic | null;
   isGenerating: boolean;
+  needsRegenerate: boolean;
 }
 
 const state: AppState = {
@@ -59,6 +61,7 @@ const state: AppState = {
   sourceName: "sample",
   mosaic: null,
   isGenerating: false,
+  needsRegenerate: false,
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -253,6 +256,7 @@ function bindControls(): void {
 
   getElement<HTMLTextAreaElement>("glyph-input").addEventListener("input", (event) => {
     state.userGlyphs = (event.target as HTMLTextAreaElement).value;
+    markNeedsRegenerate();
     updateStats();
   });
 
@@ -266,6 +270,7 @@ function bindControls(): void {
     const uploaded = await registerUploadedFonts(input.files);
     state.fonts.push(...uploaded);
     renderFontList();
+    markNeedsRegenerate();
     setStatus(`Registered ${uploaded.length} uploaded font${uploaded.length === 1 ? "" : "s"}`);
   });
 
@@ -279,6 +284,7 @@ function bindControls(): void {
       const newFonts = localFonts.filter((font) => !existing.has(`${font.source}:${font.family}`));
       state.fonts.push(...newFonts);
       renderFontList();
+      markNeedsRegenerate();
       setStatus(`Found ${newFonts.length} local font families`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Local font scan failed");
@@ -290,58 +296,76 @@ function bindControls(): void {
   getElement<HTMLInputElement>("columns").addEventListener("input", (event) => {
     state.settings.columns = Number((event.target as HTMLInputElement).value);
     setOutput("columns-output", state.settings.columns);
+    markNeedsRegenerate();
   });
   getElement<HTMLInputElement>("rows").addEventListener("input", (event) => {
     state.settings.rows = Number((event.target as HTMLInputElement).value);
     setOutput("rows-output", state.settings.rows);
+    markNeedsRegenerate();
   });
   getElement<HTMLInputElement>("source-pixels").addEventListener("input", (event) => {
     state.settings.sourcePixelsPerGlyph = Number((event.target as HTMLInputElement).value);
     setOutput("source-pixels-output", state.settings.sourcePixelsPerGlyph);
+    markNeedsRegenerate();
   });
   getElement<HTMLSelectElement>("grid-mode").addEventListener("change", (event) => {
     state.settings.gridMode = (event.target as HTMLSelectElement)
       .value as RenderSettings["gridMode"];
     syncGridMode();
+    markNeedsRegenerate();
   });
-  getElement<HTMLInputElement>("cell-width").addEventListener("input", numberSetting("cellWidth"));
+  getElement<HTMLInputElement>("cell-width").addEventListener(
+    "input",
+    visualNumberSetting("cellWidth"),
+  );
   getElement<HTMLInputElement>("cell-height").addEventListener(
     "input",
-    numberSetting("cellHeight"),
+    visualNumberSetting("cellHeight"),
   );
-  getElement<HTMLInputElement>("font-size").addEventListener("input", numberSetting("fontSize"));
+  getElement<HTMLInputElement>("font-size").addEventListener(
+    "input",
+    visualNumberSetting("fontSize"),
+  );
   getElement<HTMLInputElement>("density-window").addEventListener("input", (event) => {
     state.settings.densityWindow = Number((event.target as HTMLInputElement).value);
     setOutput("density-output", state.settings.densityWindow);
+    markNeedsRegenerate();
   });
   getElement<HTMLInputElement>("edge-matching").addEventListener("change", (event) => {
     state.settings.useEdgeMatching = (event.target as HTMLInputElement).checked;
+    markNeedsRegenerate();
   });
   getElement<HTMLInputElement>("dithering").addEventListener("change", (event) => {
     state.settings.useDithering = (event.target as HTMLInputElement).checked;
+    markNeedsRegenerate();
   });
 
   getElement<HTMLButtonElement>("mono-mode").addEventListener("click", () => {
     state.settings.colorMode = "mono";
     syncColorModeButtons();
+    applyVisualSettingsToMosaic();
   });
   getElement<HTMLButtonElement>("color-mode").addEventListener("click", () => {
     state.settings.colorMode = "color";
     syncColorModeButtons();
+    applyVisualSettingsToMosaic();
   });
   getElement<HTMLSelectElement>("color-strategy").addEventListener("change", (event) => {
     state.settings.colorStrategy = (event.target as HTMLSelectElement)
       .value as RenderSettings["colorStrategy"];
+    applyVisualSettingsToMosaic();
   });
   getElement<HTMLInputElement>("foreground").addEventListener("input", (event) => {
     state.settings.foreground = (event.target as HTMLInputElement).value;
+    applyVisualSettingsToMosaic();
   });
   getElement<HTMLInputElement>("background").addEventListener("input", (event) => {
     state.settings.background = (event.target as HTMLInputElement).value;
-    drawPreview();
+    applyVisualSettingsToMosaic();
   });
   getElement<HTMLInputElement>("transparent").addEventListener("change", (event) => {
     state.settings.transparentBackground = (event.target as HTMLInputElement).checked;
+    applyVisualSettingsToMosaic();
   });
   getElement<HTMLInputElement>("output-scale").addEventListener(
     "input",
@@ -355,6 +379,7 @@ function bindControls(): void {
         font.weights = weights;
       }
       renderFontList();
+      markNeedsRegenerate();
     });
   }
 
@@ -366,6 +391,11 @@ function bindControls(): void {
     button.addEventListener("click", async () => {
       if (!state.mosaic) {
         setStatus("Generate a mosaic before exporting");
+        return;
+      }
+
+      if (state.needsRegenerate) {
+        setStatus("Regenerate the mosaic before exporting structural changes");
         return;
       }
 
@@ -393,6 +423,7 @@ function renderGlyphPacks(): void {
       } else {
         state.enabledPacks.delete(pack.id);
       }
+      markNeedsRegenerate();
       updateStats();
     });
     container.append(label);
@@ -414,6 +445,7 @@ function renderFontList(): void {
     `;
     label.querySelector("input")!.addEventListener("change", (event) => {
       font.selected = (event.target as HTMLInputElement).checked;
+      markNeedsRegenerate();
       updateStats();
     });
     container.append(label);
@@ -488,6 +520,7 @@ async function generate(): Promise<void> {
       onProgress: renderProgress,
     });
     state.mosaic = mosaic;
+    state.needsRegenerate = false;
     drawPreview();
     updateStats();
     setStatus("Mosaic ready");
@@ -517,8 +550,66 @@ function drawPreview(): void {
   applySettingsToPreviewCanvas(previewCanvas, state.mosaic, state.settings);
 }
 
+function applyVisualSettingsToMosaic(): void {
+  if (!state.mosaic) {
+    drawPreview();
+    return;
+  }
+
+  state.mosaic.cellWidth = state.settings.cellWidth;
+  state.mosaic.cellHeight = state.settings.cellHeight;
+  state.mosaic.fontSize = state.settings.fontSize;
+  state.mosaic.background = state.settings.background;
+  state.mosaic.transparentBackground = state.settings.transparentBackground;
+
+  for (const cell of state.mosaic.cells) {
+    cell.background = state.settings.background;
+    cell.foreground = visualForegroundForCell(cell);
+  }
+
+  drawPreview();
+  setStatus(
+    state.needsRegenerate
+      ? "Visual settings updated; regenerate structural changes"
+      : "Visual settings updated",
+  );
+}
+
+function visualForegroundForCell(cell: Mosaic["cells"][number]): string {
+  if (state.settings.colorMode === "mono") {
+    return state.settings.foreground;
+  }
+
+  switch (state.settings.colorStrategy) {
+    case "source":
+      return cell.sourceColor;
+    case "uniform":
+      return state.settings.foreground;
+    case "glyph":
+      return colorFromString(cell.glyph);
+    case "font":
+      return colorFromString(cell.fontFamily);
+    case "glyph-font":
+      return colorFromString(`${cell.glyph}:${cell.fontFamily}:${cell.weight}`);
+    default:
+      return state.settings.foreground;
+  }
+}
+
+function markNeedsRegenerate(): void {
+  if (state.mosaic) {
+    state.needsRegenerate = true;
+    setStatus("Settings changed; regenerate the mosaic before exporting");
+  }
+}
+
 function applyRecommendedGrid(source: HTMLImageElement | HTMLCanvasElement): void {
-  const recommendation = recommendGridForImage(source.width, source.height);
+  const recommendation = recommendGridForImage(
+    source.width,
+    source.height,
+    state.settings.cellWidth,
+    state.settings.cellHeight,
+  );
   state.settings.columns = recommendation.columns;
   state.settings.rows = recommendation.rows;
   state.settings.sourcePixelsPerGlyph = recommendation.sourcePixelsPerGlyph;
@@ -560,6 +651,16 @@ function numberSetting(key: keyof RenderSettings): (event: Event) => void {
     const value = Number((event.target as HTMLInputElement).value);
     if (Number.isFinite(value)) {
       setNumericSetting(key, value);
+    }
+  };
+}
+
+function visualNumberSetting(key: keyof RenderSettings): (event: Event) => void {
+  return (event: Event) => {
+    const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value)) {
+      setNumericSetting(key, value);
+      applyVisualSettingsToMosaic();
     }
   };
 }

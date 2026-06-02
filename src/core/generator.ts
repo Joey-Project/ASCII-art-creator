@@ -106,9 +106,10 @@ export function resolveGrid(
 ): { columns: number; rows: number } {
   if (settings.gridMode === "source-pixels") {
     const step = Math.max(1, settings.sourcePixelsPerGlyph);
+    const cellAspectCompensation = settings.cellWidth / settings.cellHeight;
     return {
       columns: clampInteger(Math.round(sourceWidth / step), 8, 220),
-      rows: clampInteger(Math.round(sourceHeight / step), 4, 220),
+      rows: clampInteger(Math.round((sourceHeight / step) * cellAspectCompensation), 4, 220),
     };
   }
 
@@ -121,11 +122,18 @@ export function resolveGrid(
 export function recommendGridForImage(
   sourceWidth: number,
   sourceHeight: number,
+  cellWidth = 12,
+  cellHeight = 16,
 ): { columns: number; rows: number; sourcePixelsPerGlyph: number } {
   const area = Math.max(1, sourceWidth * sourceHeight);
   const sourcePixelsPerGlyph = clampInteger(Math.round(Math.sqrt(area / 8_500)), 4, 64);
+  const cellAspectCompensation = cellWidth / cellHeight;
   const columns = clampInteger(Math.round(sourceWidth / sourcePixelsPerGlyph), 32, 180);
-  const rows = clampInteger(Math.round(sourceHeight / sourcePixelsPerGlyph), 18, 180);
+  const rows = clampInteger(
+    Math.round((sourceHeight / sourcePixelsPerGlyph) * cellAspectCompensation),
+    18,
+    180,
+  );
   return { columns, rows, sourcePixelsPerGlyph };
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 test("generates a mosaic from an uploaded image and exports all formats", async ({ page }) => {
   await page.goto("/");
@@ -15,6 +15,7 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   await expect(page.locator("#candidate-count")).toContainText("renderable");
   await expect(page.locator("#cell-count")).not.toContainText("Cells: 0");
+  await page.locator("#background").fill("#123456");
 
   const box = await page.locator("#preview-canvas").boundingBox();
   expect(box?.width).toBeGreaterThan(300);
@@ -31,6 +32,12 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
     expect(download.suggestedFilename().toLowerCase()).toContain(
       format === "JPEG" ? "fixture.jpg" : `fixture.${format.toLowerCase()}`,
     );
+    if (format === "SVG") {
+      expect(await readFile(path!, "utf8")).toContain("#123456");
+    }
+    if (format === "TXT") {
+      expect((await readFile(path!, "utf8")).trim().split("\n").length).toBeGreaterThan(0);
+    }
   }
 });
 

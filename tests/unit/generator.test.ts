@@ -35,7 +35,7 @@ describe("grid sizing", () => {
       }),
     ).toEqual({
       columns: 60,
-      rows: 40,
+      rows: 30,
     });
   });
 
@@ -44,5 +44,17 @@ describe("grid sizing", () => {
     expect(recommendation.columns).toBeGreaterThan(32);
     expect(recommendation.rows).toBeGreaterThan(18);
     expect(recommendation.sourcePixelsPerGlyph).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps generated output close to the source aspect ratio", () => {
+    const grid = resolveGrid(1920, 1080, {
+      ...baseSettings,
+      gridMode: "source-pixels",
+      sourcePixelsPerGlyph: 16,
+    });
+
+    const outputAspect =
+      (grid.columns * baseSettings.cellWidth) / (grid.rows * baseSettings.cellHeight);
+    expect(outputAspect).toBeCloseTo(1920 / 1080, 1);
   });
 });

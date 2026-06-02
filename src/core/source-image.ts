@@ -107,11 +107,13 @@ function extractSingleCell(
       const sampleRed = imageData.data[offset];
       const sampleGreen = imageData.data[offset + 1];
       const sampleBlue = imageData.data[offset + 2];
-      const luminance = (0.2126 * sampleRed + 0.7152 * sampleGreen + 0.0722 * sampleBlue) / 255;
-      values[y * FEATURE_SIZE + x] = clamp01((1 - luminance) * alpha + (1 - alpha));
-      red += sampleRed;
-      green += sampleGreen;
-      blue += sampleBlue;
+      const composited = compositeOnWhite(sampleRed, sampleGreen, sampleBlue, alpha);
+      const luminance =
+        (0.2126 * composited.red + 0.7152 * composited.green + 0.0722 * composited.blue) / 255;
+      values[y * FEATURE_SIZE + x] = clamp01(1 - luminance);
+      red += composited.red;
+      green += composited.green;
+      blue += composited.blue;
       count += 1;
     }
   }
@@ -119,5 +121,19 @@ function extractSingleCell(
   return {
     feature: extractFeatureFromDarkness(values),
     color: rgbToHex(red / count, green / count, blue / count),
+  };
+}
+
+export function compositeOnWhite(
+  red: number,
+  green: number,
+  blue: number,
+  alpha: number,
+): { red: number; green: number; blue: number } {
+  const clampedAlpha = clamp01(alpha);
+  return {
+    red: red * clampedAlpha + 255 * (1 - clampedAlpha),
+    green: green * clampedAlpha + 255 * (1 - clampedAlpha),
+    blue: blue * clampedAlpha + 255 * (1 - clampedAlpha),
   };
 }
