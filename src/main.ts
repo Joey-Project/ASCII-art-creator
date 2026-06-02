@@ -243,11 +243,16 @@ function bindControls(): void {
       return;
     }
 
-    state.source = await loadImageFromFile(file);
-    state.sourceName = file.name;
-    applyRecommendedGrid(state.source);
-    markNeedsRegenerate();
-    await generate();
+    try {
+      setStatus("Loading image");
+      state.source = await loadImageFromFile(file);
+      state.sourceName = file.name;
+      applyRecommendedGrid(state.source);
+      markNeedsRegenerate();
+      await generate();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Image loading failed");
+    }
   });
 
   getElement<HTMLButtonElement>("sample-button").addEventListener("click", async () => {
@@ -271,11 +276,29 @@ function bindControls(): void {
     }
 
     setStatus("Registering uploaded fonts");
-    const uploaded = await registerUploadedFonts(input.files);
+    const uploaded: FontChoice[] = [];
+    let failed = 0;
+    for (const file of Array.from(input.files)) {
+      try {
+        uploaded.push(...(await registerUploadedFonts([file])));
+      } catch {
+        failed += 1;
+      }
+    }
+
+    if (uploaded.length === 0) {
+      setStatus(failed > 0 ? "No uploaded fonts could be registered" : "No fonts selected");
+      return;
+    }
+
     state.fonts.push(...uploaded);
     renderFontList();
     markNeedsRegenerate();
-    setStatus(`Registered ${uploaded.length} uploaded font${uploaded.length === 1 ? "" : "s"}`);
+    setStatus(
+      `Registered ${uploaded.length} uploaded font${uploaded.length === 1 ? "" : "s"}${
+        failed > 0 ? `; ${failed} failed` : ""
+      }`,
+    );
   });
 
   getElement<HTMLButtonElement>("scan-fonts").addEventListener("click", async () => {
@@ -699,11 +722,13 @@ function numberSetting(key: keyof RenderSettings): (event: Event) => void {
 
 function cellMetricSetting(key: "cellWidth" | "cellHeight"): (event: Event) => void {
   return (event: Event) => {
-    const value = Number((event.target as HTMLInputElement).value);
+    const input = event.target as HTMLInputElement;
+    const value = clampCellMetric(key, Number(input.value));
     if (!Number.isFinite(value)) {
       return;
     }
 
+    input.value = String(value);
     setNumericSetting(key, value);
     if (state.settings.gridMode === "source-pixels") {
       markNeedsRegenerate();
@@ -712,6 +737,11 @@ function cellMetricSetting(key: "cellWidth" | "cellHeight"): (event: Event) => v
 
     applyVisualSettingsToMosaic();
   };
+}
+
+function clampCellMetric(key: "cellWidth" | "cellHeight", value: number): number {
+  const bounds = key === "cellWidth" ? { minimum: 6, maximum: 28 } : { minimum: 8, maximum: 36 };
+  return Math.max(bounds.minimum, Math.min(bounds.maximum, value));
 }
 
 function visualNumberSetting(key: keyof RenderSettings): (event: Event) => void {

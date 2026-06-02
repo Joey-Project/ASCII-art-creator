@@ -36,6 +36,9 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
       const svg = await readFile(path!, "utf8");
       expect(svg).toContain("<svg");
       expect(svg).toContain("#123456");
+      expect(svg.match(/<text /g)?.length ?? 0).toBeGreaterThan(0);
+      expect(svg).toContain("font-family=");
+      expect(svg).toContain("font-weight=");
     }
     if (format === "TXT") {
       const text = await readFile(path!, "utf8");
@@ -43,6 +46,21 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
       expect(
         Array.from(text, (glyph) => glyph.codePointAt(0) ?? 0).every((code) => code <= 0x7f),
       ).toBe(true);
+    }
+    if (format === "PNG") {
+      const dimensions = pngDimensions(await readFile(path!));
+      expect(dimensions.width).toBeGreaterThan(300);
+      expect(dimensions.height).toBeGreaterThan(200);
+    }
+    if (format === "JPEG") {
+      const dimensions = jpegDimensions(await readFile(path!));
+      expect(dimensions.width).toBeGreaterThan(300);
+      expect(dimensions.height).toBeGreaterThan(200);
+    }
+    if (format === "PDF") {
+      const pdf = await readFile(path!, "utf8");
+      expect(pdf.startsWith("%PDF-")).toBe(true);
+      expect(pdf).toContain("/Type /Page");
     }
   }
 });
@@ -75,6 +93,51 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
   await page.getByRole("button", { name: "Generate mosaic" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   expect(await statNumber(page, "#cell-count")).not.toBe(sourcePixelCellCount);
+
+  await page.getByLabel("Cell width").fill("100000");
+  await expect(page.getByLabel("Cell width")).toHaveValue("28");
+});
+
+test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("ASCII").uncheck();
+  await page.getByLabel("User glyphs").fill("Ω");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const txtDownload = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "TXT" }).click(),
+  ]).then(([download]) => download);
+  const txtPath = await txtDownload.path();
+  expect(await readFile(txtPath!, "utf8")).toContain("Ω");
+
+  const svgDownload = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "SVG" }).click(),
+  ]).then(([download]) => download);
+  const svgPath = await svgDownload.path();
+  const svg = await readFile(svgPath!, "utf8");
+  expect(svg).toContain(">Ω</text>");
+  expect(svg).toContain("font-family=");
+  expect(svg).toContain("font-weight=");
+});
+
+test("reports invalid image and font uploads", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "bad.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not an image"),
+  });
+  await expect(page.locator("#status")).toContainText("could not be decoded");
+
+  await page.locator("#font-input").setInputFiles({
+    name: "bad.ttf",
+    mimeType: "font/ttf",
+    buffer: Buffer.from("not a font"),
+  });
+  await expect(page.locator("#status")).toContainText("No uploaded fonts could be registered");
 });
 
 test("keeps the mobile layout usable", async ({ page, isMobile }) => {
@@ -96,4 +159,41 @@ async function statNumber(page: Page, selector: string): Promise<number> {
   const text = await page.locator(selector).textContent();
   const match = text?.match(/\d[\d,]*/);
   return Number(match?.[0].replaceAll(",", "") ?? 0);
+}
+
+function pngDimensions(buffer: Buffer): { width: number; height: number } {
+  expect(buffer.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+}
+
+function jpegDimensions(buffer: Buffer): { width: number; height: number } {
+  expect(buffer[0]).toBe(0xff);
+  expect(buffer[1]).toBe(0xd8);
+
+  let offset = 2;
+  while (offset < buffer.length) {
+    while (buffer[offset] === 0xff) {
+      offset += 1;
+    }
+    const marker = buffer[offset];
+    offset += 1;
+
+    if (marker === 0xd9 || marker === 0xda) {
+      break;
+    }
+
+    const length = buffer.readUInt16BE(offset);
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: buffer.readUInt16BE(offset + 3),
+        width: buffer.readUInt16BE(offset + 5),
+      };
+    }
+    offset += length;
+  }
+
+  throw new Error("JPEG dimensions could not be read");
 }
