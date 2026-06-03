@@ -64,24 +64,59 @@ export const BUILTIN_FONTS: FontChoice[] = [
   },
 ];
 
-export function localFontAccessAvailable(): boolean {
-  return typeof window !== "undefined" && typeof window.queryLocalFonts === "function";
+export interface LocalFontAccessStatus {
+  available: boolean;
+  reason: string;
 }
 
-export async function scanLocalFonts(limit = 80): Promise<FontChoice[]> {
+export function localFontAccessStatus(): LocalFontAccessStatus {
+  if (typeof window === "undefined") {
+    return {
+      available: false,
+      reason: "Local Font Access needs a browser runtime.",
+    };
+  }
+
+  if (!window.isSecureContext) {
+    return {
+      available: false,
+      reason: "Local Font Access needs HTTPS or localhost.",
+    };
+  }
+
+  if (typeof window.queryLocalFonts !== "function") {
+    return {
+      available: false,
+      reason: "Local Font Access is only available in some Chromium desktop browsers.",
+    };
+  }
+
+  return {
+    available: true,
+    reason: "Local Font Access scan needs browser permission and may be empty if access is denied.",
+  };
+}
+
+export function localFontAccessAvailable(): boolean {
+  return localFontAccessStatus().available;
+}
+
+export async function scanLocalFonts(limit = 300): Promise<FontChoice[]> {
   if (!localFontAccessAvailable()) {
-    throw new Error("Local Font Access is not available in this browser");
+    throw new Error(localFontAccessStatus().reason);
   }
 
   const fonts = await window.queryLocalFonts!();
   const byFamily = new Map<string, LocalFontData>();
   for (const font of fonts) {
-    if (!byFamily.has(font.family)) {
-      byFamily.set(font.family, font);
+    const family = font.family.trim() || font.fullName.trim() || font.postscriptName.trim();
+    if (family && !byFamily.has(family)) {
+      byFamily.set(family, { ...font, family });
     }
   }
 
   return Array.from(byFamily.values())
+    .sort((first, second) => first.family.localeCompare(second.family))
     .slice(0, limit)
     .map((font, index) => ({
       id: `local-${index}-${slug(font.family)}`,

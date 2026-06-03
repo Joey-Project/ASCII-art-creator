@@ -15,7 +15,7 @@ import { colorFromString } from "./core/colors";
 import { createSampleImage, loadImageFromFile } from "./core/source-image";
 import {
   BUILTIN_FONTS,
-  localFontAccessAvailable,
+  localFontAccessStatus,
   registerUploadedFonts,
   scanLocalFonts,
 } from "./core/fonts";
@@ -45,6 +45,8 @@ interface AppState {
   fonts: FontChoice[];
   enabledPacks: Set<string>;
   userGlyphs: string;
+  fontSearch: string;
+  fontExactMatch: boolean;
   source: HTMLImageElement | HTMLCanvasElement | null;
   sourceName: string;
   mosaic: Mosaic | null;
@@ -58,6 +60,8 @@ const state: AppState = {
   fonts: structuredClone(BUILTIN_FONTS),
   enabledPacks: new Set(GLYPH_PACKS.filter((pack) => pack.defaultEnabled).map((pack) => pack.id)),
   userGlyphs: "",
+  fontSearch: "",
+  fontExactMatch: false,
   source: null,
   sourceName: "sample",
   mosaic: null,
@@ -94,10 +98,10 @@ app.innerHTML = `
         <h2>Glyphs</h2>
         <label>
           User glyphs
-          <textarea id="glyph-input" rows="3" spellcheck="false"></textarea>
+          <textarea id="glyph-input" rows="3" spellcheck="false" placeholder="Optional additions. Checked packs below still apply; uncheck ASCII to use only this field."></textarea>
         </label>
         <div id="glyph-packs" class="checkbox-grid" aria-label="Glyph packs"></div>
-        <p class="hint">Default generation uses ASCII only. Non-ASCII packs must be enabled explicitly.</p>
+        <p class="hint">User glyphs are added to checked packs. To use only this field, uncheck ASCII and any other packs below.</p>
       </div>
 
       <div class="control-group">
@@ -109,13 +113,23 @@ app.innerHTML = `
           </label>
           <button id="scan-fonts" class="secondary" type="button">Scan local fonts</button>
         </div>
+        <p id="font-scan-hint" class="hint"></p>
+        <label>
+          Search fonts
+          <input id="font-search" type="text" autocomplete="off" placeholder="Fuzzy match font name or source" />
+        </label>
+        <label class="check"><input id="font-exact-match" type="checkbox" /> Exact text match</label>
         <div id="font-list" class="font-list" aria-label="Fonts"></div>
+        <div class="field-header">
+          <span>Font weights</span>
+          <span>applies to each selected font</span>
+        </div>
         <div class="weight-row" aria-label="Font weights">
-          <label><input type="checkbox" class="weight-checkbox" value="300" /> 300</label>
-          <label><input type="checkbox" class="weight-checkbox" value="400" checked /> 400</label>
-          <label><input type="checkbox" class="weight-checkbox" value="500" /> 500</label>
-          <label><input type="checkbox" class="weight-checkbox" value="700" checked /> 700</label>
-          <label><input type="checkbox" class="weight-checkbox" value="900" /> 900</label>
+          <label><input type="checkbox" class="weight-checkbox" value="300" /> 300 Light</label>
+          <label><input type="checkbox" class="weight-checkbox" value="400" checked /> 400 Regular</label>
+          <label><input type="checkbox" class="weight-checkbox" value="500" /> 500 Medium</label>
+          <label><input type="checkbox" class="weight-checkbox" value="700" checked /> 700 Bold</label>
+          <label><input type="checkbox" class="weight-checkbox" value="900" /> 900 Black</label>
         </div>
       </div>
 
@@ -269,6 +283,16 @@ function bindControls(): void {
     updateStats();
   });
 
+  getElement<HTMLInputElement>("font-search").addEventListener("input", (event) => {
+    state.fontSearch = (event.target as HTMLInputElement).value;
+    renderFontList();
+  });
+
+  getElement<HTMLInputElement>("font-exact-match").addEventListener("change", (event) => {
+    state.fontExactMatch = (event.target as HTMLInputElement).checked;
+    renderFontList();
+  });
+
   getElement<HTMLInputElement>("font-input").addEventListener("change", async (event) => {
     const input = event.target as HTMLInputElement;
     if (!input.files?.length) {
@@ -314,7 +338,13 @@ function bindControls(): void {
       if (newFonts.some((font) => font.selected)) {
         markNeedsRegenerate();
       }
-      setStatus(`Found ${newFonts.length} local font families`);
+      setStatus(
+        `Found ${newFonts.length} new local font families${
+          localFonts.length > newFonts.length
+            ? ` (${localFonts.length.toLocaleString()} available after scan)`
+            : ""
+        }`,
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Local font scan failed");
     } finally {
@@ -463,8 +493,11 @@ function renderGlyphPacks(): void {
 function renderFontList(): void {
   const container = getElement<HTMLDivElement>("font-list");
   container.innerHTML = "";
+  const matchingFonts = state.fonts.filter((font) =>
+    fontMatchesSearch(font, state.fontSearch, state.fontExactMatch),
+  );
 
-  for (const font of state.fonts) {
+  for (const font of matchingFonts) {
     const label = document.createElement("label");
     label.className = "font-row";
     const checkbox = document.createElement("input");
@@ -493,16 +526,63 @@ function renderFontList(): void {
     container.append(label);
   }
 
-  getElement<HTMLButtonElement>("scan-fonts").disabled = !localFontAccessAvailable();
-  if (!localFontAccessAvailable()) {
-    getElement<HTMLButtonElement>("scan-fonts").title =
-      "Local Font Access is only available in some Chromium desktop browsers.";
+  if (matchingFonts.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No fonts match this search.";
+    container.append(empty);
   }
+
+  const access = localFontAccessStatus();
+  const scanButton = getElement<HTMLButtonElement>("scan-fonts");
+  scanButton.disabled = !access.available;
+  scanButton.title = access.reason;
+  const hiddenSelectedCount = state.fonts.filter(
+    (font) => font.selected && !fontMatchesSearch(font, state.fontSearch, state.fontExactMatch),
+  ).length;
+  const hiddenSelectedText =
+    hiddenSelectedCount > 0
+      ? ` ${hiddenSelectedCount.toLocaleString()} selected ${hiddenSelectedCount === 1 ? "font is" : "fonts are"} hidden by search and still included in generation.`
+      : "";
+  getElement<HTMLParagraphElement>("font-scan-hint").textContent =
+    `${access.reason} Showing ${matchingFonts.length.toLocaleString()} of ${state.fonts.length.toLocaleString()} fonts.${hiddenSelectedText}`;
   updateStats();
+}
+
+function fontMatchesSearch(font: FontChoice, query: string, exactMatch: boolean): boolean {
+  const normalizedQuery = normalizeSearch(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const haystack = normalizeSearch(`${font.label} ${font.family} ${font.source}`);
+  if (exactMatch) {
+    return haystack.includes(normalizedQuery);
+  }
+
+  return fuzzyIncludes(haystack, normalizedQuery);
+}
+
+function fuzzyIncludes(value: string, query: string): boolean {
+  let cursor = 0;
+  for (const char of query) {
+    cursor = value.indexOf(char, cursor);
+    if (cursor === -1) {
+      return false;
+    }
+    cursor += 1;
+  }
+  return true;
+}
+
+function normalizeSearch(value: string): string {
+  return value.trim().toLocaleLowerCase();
 }
 
 function syncUiFromState(): void {
   getElement<HTMLTextAreaElement>("glyph-input").value = state.userGlyphs;
+  getElement<HTMLInputElement>("font-search").value = state.fontSearch;
+  getElement<HTMLInputElement>("font-exact-match").checked = state.fontExactMatch;
   getElement<HTMLSelectElement>("grid-mode").value = state.settings.gridMode;
   syncColorModeButtons();
   syncGridMode();

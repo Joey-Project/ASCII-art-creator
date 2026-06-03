@@ -175,6 +175,22 @@ input[type="file"] {
   line-height: 1.45;
 }
 
+.field-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: #2e393b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.field-header span:last-child {
+  color: #687174;
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .font-list {
   display: grid;
   gap: 6px;
@@ -203,6 +219,15 @@ input[type="file"] {
 .font-weights {
   color: #697477;
   font-size: 11px;
+}
+
+.empty-state {
+  margin: 0;
+  border: 1px dashed #c9d2cf;
+  border-radius: 6px;
+  color: #687174;
+  font-size: 12px;
+  padding: 10px;
 }
 
 .weight-row {
