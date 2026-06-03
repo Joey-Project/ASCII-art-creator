@@ -123,31 +123,7 @@ test("edits uploaded sources before generation and can reopen edit parameters", 
 });
 
 test("ignores stale uploads when another source is loaded first", async ({ page }) => {
-  await page.addInitScript(() => {
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
-    if (!descriptor?.get || !descriptor.set) {
-      return;
-    }
-
-    const NativeImage = window.Image;
-    let delayedBlobLoads = 0;
-    window.Image = function patchedImage(width?: number, height?: number) {
-      const image = new NativeImage(width, height);
-      Object.defineProperty(image, "src", {
-        configurable: true,
-        get() {
-          return descriptor.get!.call(image);
-        },
-        set(value: string) {
-          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? 350 : 0;
-          delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
-          window.setTimeout(() => descriptor.set!.call(image, value), delay);
-        },
-      });
-      return image;
-    } as typeof Image;
-    window.Image.prototype = NativeImage.prototype;
-  });
+  await delayFirstBlobImageLoad(page);
 
   await page.goto("/");
   await page.locator("#image-input").setInputFiles({
@@ -157,6 +133,28 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
   });
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.waitForTimeout(700);
+
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#source-name")).toContainText("sample-gradient");
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+});
+
+test("cancels pending uploads when source edits are cancelled", async ({ page }) => {
+  await delayFirstBlobImageLoad(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.locator("#image-input").setInputFiles({
+    name: "cancelled-replacement.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
   await page.waitForTimeout(700);
 
   await expect(page.locator("#source-editor")).toBeHidden();
@@ -180,6 +178,55 @@ test("can upload the same file again after cancelling source edits", async ({ pa
   await page.locator("#image-input").setInputFiles(upload);
   await expect(page.locator("#source-editor")).toBeVisible();
   await expect(page.locator("#status")).toContainText("Confirm source edits");
+});
+
+test("preserves grid settings when confirming unchanged source edits", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.locator("#columns").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "77";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#columns-output")).toHaveText("77");
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.locator("#columns-output")).toHaveText("77");
+});
+
+test("keeps in-flight generation valid when source edits are cancelled", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.locator("#columns").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "180";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#rows").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "180";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#columns-output")).toHaveText("180");
+  await expect(page.locator("#rows-output")).toHaveText("180");
+
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText(/Generated|Sampling|Rendering|Building/, {
+    timeout: 5_000,
+  });
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.locator("#cell-count")).toContainText("32,400");
 });
 
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
@@ -331,6 +378,34 @@ async function dragEditorCanvas(
   await page.mouse.down();
   await page.mouse.move(endX, endY, { steps: 8 });
   await page.mouse.up();
+}
+
+async function delayFirstBlobImageLoad(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (!descriptor?.get || !descriptor.set) {
+      return;
+    }
+
+    const NativeImage = window.Image;
+    let delayedBlobLoads = 0;
+    window.Image = function patchedImage(width?: number, height?: number) {
+      const image = new NativeImage(width, height);
+      Object.defineProperty(image, "src", {
+        configurable: true,
+        get() {
+          return descriptor.get!.call(image);
+        },
+        set(value: string) {
+          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? 350 : 0;
+          delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
+          window.setTimeout(() => descriptor.set!.call(image, value), delay);
+        },
+      });
+      return image;
+    } as typeof Image;
+    window.Image.prototype = NativeImage.prototype;
+  });
 }
 
 function fixturePngBuffer(): Buffer {

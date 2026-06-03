@@ -39,7 +39,7 @@ superseded_by:
 - Design doc: `docs/design/architecture.md`
 - Validation: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`
 - Unit coverage: 8 files / 43 tests passed
-- E2E coverage: 17 passed / 1 skipped across desktop and mobile projects
+- E2E coverage: 23 passed / 1 skipped across desktop and mobile projects
 - Internal review: `codex-readonly` isolated review `.codex-tmp/isolated-review-ieo00xdn`, final artifact `LGTM`
 - Stage-semantics refinement review: `codex-readonly` isolated review `.codex-tmp/isolated-review-ke6afha6`, final artifact `LGTM`
-- PR review hardening: preserved deferred free-rotation frames across repeated rotations, kept final clipped frames padded with transparency, fit free-rotation bounds under the editor canvas budget, ignored stale async upload decodes, and allowed retrying the same upload file after cancelling the source editor.
+- PR review hardening: preserved deferred free-rotation frames across repeated rotations, kept final clipped frames padded with transparency, fit free-rotation bounds under the editor canvas budget, ignored stale async upload decodes, cancelled pending upload decodes when edits are cancelled, kept rotation drags in stable client coordinates, preserved hand-tuned grids for unchanged confirmed sources, kept in-flight generation valid when edits are only opened then cancelled, and allowed retrying the same upload file after cancelling the source editor.

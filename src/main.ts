@@ -26,6 +26,7 @@ import {
   renderEditedSourceStage,
   renderEditedSource,
   resetOperations,
+  sourceDimensions,
   MIN_CROP_SIZE,
   type CropEditOperation,
   type EditorRenderMetrics,
@@ -94,7 +95,7 @@ type EditorPointerState =
   | {
       kind: "rotate";
       pointerId: number;
-      center: Point;
+      centerClient: Point;
       startAngle: number;
       startDegrees: number;
     };
@@ -618,7 +619,7 @@ function bindControls(): void {
     resetEditorOperations("all");
   });
   getElement<HTMLButtonElement>("cancel-source-edit").addEventListener("click", () => {
-    closeSourceEditor();
+    closeSourceEditor({ drainPendingGenerate: true });
     setStatus(state.source ? "Source edit cancelled" : "Upload cancelled");
   });
   getElement<HTMLButtonElement>("confirm-source-edit").addEventListener("click", () => {
@@ -667,8 +668,6 @@ function openSourceEditor(
   if (state.editor?.renderFrameId != null) {
     cancelAnimationFrame(state.editor.renderFrameId);
   }
-  state.generationVersion += 1;
-  state.pendingGenerateAfterCurrent = false;
   state.editor = {
     original,
     sourceName: sourceNameValue,
@@ -688,16 +687,21 @@ function openSourceEditor(
   renderSourceEditor();
 }
 
-function closeSourceEditor(): void {
+function closeSourceEditor(options: { drainPendingGenerate?: boolean } = {}): void {
   const editor = state.editor;
   if (editor?.renderFrameId != null) {
     cancelAnimationFrame(editor.renderFrameId);
   }
+  nextImageLoadToken();
   state.editor = null;
   getElement<HTMLElement>("source-editor").hidden = true;
   getElement<HTMLElement>("source-editor-actions").hidden = true;
   getElement<HTMLButtonElement>("generate-button").disabled = false;
   syncEditSourceButton();
+  if (options.drainPendingGenerate && state.pendingGenerateAfterCurrent && !state.isGenerating) {
+    state.pendingGenerateAfterCurrent = false;
+    void generate();
+  }
 }
 
 async function confirmSourceEditor(): Promise<void> {
@@ -716,11 +720,25 @@ async function confirmSourceEditor(): Promise<void> {
     const original = editor.original;
     const editState = cloneSourceEditState(compactedEditState);
     const name = editor.sourceName;
+    const recommendGrid = shouldRecommendGridForConfirmedSource(original, rendered);
     closeSourceEditor();
-    await commitSource(rendered, original, name, editState);
+    await commitSource(rendered, original, name, editState, { recommendGrid });
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Source edit failed");
   }
+}
+
+function shouldRecommendGridForConfirmedSource(
+  original: HTMLImageElement | HTMLCanvasElement,
+  rendered: HTMLImageElement | HTMLCanvasElement,
+): boolean {
+  if (original !== state.sourceOriginal || !state.source) {
+    return true;
+  }
+
+  const previous = sourceDimensions(state.source);
+  const next = sourceDimensions(rendered);
+  return previous.width !== next.width || previous.height !== next.height;
 }
 
 async function commitSource(
@@ -728,6 +746,7 @@ async function commitSource(
   original: HTMLImageElement | HTMLCanvasElement,
   sourceNameValue: string,
   editState: SourceEditState,
+  options: { recommendGrid?: boolean } = {},
 ): Promise<void> {
   state.source = source;
   state.sourceOriginal = original;
@@ -736,7 +755,10 @@ async function commitSource(
   state.mosaic = null;
   state.needsRegenerate = false;
   state.generationVersion += 1;
-  applyRecommendedGrid(source);
+  state.pendingGenerateAfterCurrent = false;
+  if (options.recommendGrid !== false) {
+    applyRecommendedGrid(source);
+  }
   syncEditSourceButton();
   updateStats();
   drawPreview();
@@ -938,6 +960,20 @@ function syncEditSourceButton(): void {
     Boolean(state.editor) || !state.sourceOriginal || !state.sourceEdit;
 }
 
+function worldPointToClient(
+  canvas: HTMLCanvasElement,
+  metrics: EditorRenderMetrics,
+  point: Point,
+): Point {
+  const rect = canvas.getBoundingClientRect();
+  const canvasX = (point.x - metrics.worldX) * metrics.scale;
+  const canvasY = (point.y - metrics.worldY) * metrics.scale;
+  return {
+    x: rect.left + (canvasX / Math.max(1, canvas.width)) * rect.width,
+    y: rect.top + (canvasY / Math.max(1, canvas.height)) * rect.height,
+  };
+}
+
 function handleEditorPointerDown(event: PointerEvent): void {
   const editor = state.editor;
   if (!editor?.metrics) {
@@ -952,7 +988,7 @@ function handleEditorPointerDown(event: PointerEvent): void {
     }
 
     normalizeActiveCrop(editor);
-    const handle = cropHandleAtPoint(point, operation, editor.metrics);
+    const handle = cropHandleAtPoint(point, operation, editor.metrics, sourceEditorCanvas);
     const startCrop =
       handle === null
         ? { ...operation, x: point.x, y: point.y, width: MIN_CROP_SIZE, height: MIN_CROP_SIZE }
@@ -981,11 +1017,12 @@ function handleEditorPointerDown(event: PointerEvent): void {
     }
 
     const center = outputCenterFromMetrics(editor.metrics);
+    const centerClient = worldPointToClient(sourceEditorCanvas, editor.metrics, center);
     editor.pointer = {
       kind: "rotate",
       pointerId: event.pointerId,
-      center,
-      startAngle: pointAngleDegrees(point, center),
+      centerClient,
+      startAngle: pointAngleDegrees({ x: event.clientX, y: event.clientY }, centerClient),
       startDegrees: operation.degrees,
     };
     sourceEditorCanvas.setPointerCapture(event.pointerId);
@@ -1011,7 +1048,10 @@ function handleEditorPointerMove(event: PointerEvent): void {
     return;
   }
 
-  const currentAngle = pointAngleDegrees(point, editor.pointer.center);
+  const currentAngle = pointAngleDegrees(
+    { x: event.clientX, y: event.clientY },
+    editor.pointer.centerClient,
+  );
   operation.degrees =
     editor.pointer.startDegrees + normalizeAngle(currentAngle - editor.pointer.startAngle);
   scheduleSourceEditorRender();
@@ -1136,18 +1176,19 @@ function cropHandleAtPoint(
   point: Point,
   crop: CropEditOperation,
   metrics: EditorRenderMetrics,
+  canvas: HTMLCanvasElement,
 ): CropHandle | null {
-  const tolerance = 14 / metrics.scale;
+  const tolerance = worldToleranceForCssPixels(canvas, metrics, 14);
   const left = crop.x;
   const top = crop.y;
   const right = crop.x + crop.width;
   const bottom = crop.y + crop.height;
-  const nearLeft = Math.abs(point.x - left) <= tolerance;
-  const nearRight = Math.abs(point.x - right) <= tolerance;
-  const nearTop = Math.abs(point.y - top) <= tolerance;
-  const nearBottom = Math.abs(point.y - bottom) <= tolerance;
-  const insideX = point.x >= left - tolerance && point.x <= right + tolerance;
-  const insideY = point.y >= top - tolerance && point.y <= bottom + tolerance;
+  const nearLeft = Math.abs(point.x - left) <= tolerance.x;
+  const nearRight = Math.abs(point.x - right) <= tolerance.x;
+  const nearTop = Math.abs(point.y - top) <= tolerance.y;
+  const nearBottom = Math.abs(point.y - bottom) <= tolerance.y;
+  const insideX = point.x >= left - tolerance.x && point.x <= right + tolerance.x;
+  const insideY = point.y >= top - tolerance.y && point.y <= bottom + tolerance.y;
 
   if (nearLeft && nearTop) {
     return "nw";
@@ -1177,6 +1218,18 @@ function cropHandleAtPoint(
     return "move";
   }
   return null;
+}
+
+function worldToleranceForCssPixels(
+  canvas: HTMLCanvasElement,
+  metrics: EditorRenderMetrics,
+  cssPixels: number,
+): Point {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (cssPixels * canvas.width) / Math.max(1, rect.width) / metrics.scale,
+    y: (cssPixels * canvas.height) / Math.max(1, rect.height) / metrics.scale,
+  };
 }
 
 function normalizeAngle(degrees: number): number {
