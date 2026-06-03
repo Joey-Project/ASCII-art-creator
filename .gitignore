@@ -3,9 +3,13 @@
 .env.*
 .codex-tmp/
 node_modules/
+.pnpm-store/
 dist/
 build/
 out/
+playwright-report/
+test-results/
 target/
 __pycache__/
 *.py[cod]
+*.tsbuildinfo

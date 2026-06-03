@@ -1,45 +1,48 @@
-# Codex-Gated Repository Template
+# Glyph Mosaic Creator
 
-This template starts a repository with the Codex review gate workflow already on
-the default branch. It is intentionally language-neutral; add project-specific CI,
-tests, release workflows, and licensing after creating a repository from it.
+Glyph Mosaic Creator 是一个静态 Web App, 用字符和字形把用户上传的图片重建成 typographic mosaic。首版面向 GitHub Pages 部署, 采用 Vite + TypeScript + pnpm 的静态 SPA 形态, 不需要服务端处理图片或字体。
 
-## Included
+Production domain: <https://glyph-mosaic-creator.mahane.me/>
 
-- `.github/workflows/codex-review-gate.yml`
-- `.gitignore`
-- this README
+## 核心能力
 
-The workflow writes the `codex/review-gate` status check and requests a controlled
-Codex review marker for each ready pull request head. It pins
-`JoeyTeng/codex-review-gate-action` to the v1.2.1 commit SHA so privileged
-`pull_request_target` runs do not depend on a movable tag.
+- 上传图片后在浏览器本地生成 glyph mosaic。
+- 默认只启用 ASCII 候选字符, 保持首屏性能和输出可预测。
+- 非 ASCII 字形只在用户输入字符或显式启用 glyph pack 后进入候选库, 可覆盖汉字、日文假名、数学符号、emoji、音乐符号等可渲染 glyph。
+- 支持按 cell 级别混排 `glyph + font + weight`, 不依赖浏览器排版引擎做整段多字体流排。
+- 支持单色和彩色模式: 单色模式用灰度和字体颜色生成, 彩色模式保留源图颜色并用字符表达明暗、纹理或轮廓。
+- 支持上传字体和本机字体扫描的渐进增强; 浏览器不支持本机字体访问时仍可使用默认字体和上传字体。
+- 支持设置网格密度: 直接指定行数/列数, 或按每多少源图像素对应一个 glyph 计算。默认根据上传图片尺寸推荐一个桌面可预览、移动端可操作的网格。
+- 目标导出格式包括 `.txt`, `.png`, `.jpeg`, `.svg`, `.pdf`; 图片和 PDF 导出支持分辨率倍率和背景设置, PNG/SVG 在可行时支持透明背景。
 
-## After Creating a Repository
+## 使用模型
 
-1. Add the project source, CI workflow, tests, and license.
-2. Confirm `.github/workflows/codex-review-gate.yml` is present on the default
-   branch before requiring the status check.
-3. Enable the required status check with the bootstrap helper from
-   `JoeyTeng/codex-review-gate`:
+1. 选择或上传图片。
+2. 调整网格设置: 使用推荐行列数, 手动设置行/列, 或按像素步长生成 cell。
+3. 选择 glyph 候选来源。默认 ASCII; 需要多语言或符号时, 输入字符或显式启用对应 glyph pack。
+4. 选择字体来源和字重。默认字体可直接使用, 上传字体和本机字体扫描作为增强能力。
+5. 选择单色或彩色策略, 可启用边缘方向、局部对比度、形状匹配和 dithering 等质量选项。
+6. 预览结果并导出目标格式。
 
-```bash
-node scripts/bootstrap-codex-review-gate.mjs --repo OWNER/REPO
-node scripts/bootstrap-codex-review-gate.mjs --repo OWNER/REPO --apply
-```
+## 字体和隐私
 
-The helper defaults to dry-run. It refuses to require `codex/review-gate` until
-the workflow exists on the repository default branch.
+所有图片和字体处理都应在浏览器本地完成。上传的图片、上传字体和本机字体列表不需要发送到服务器。Local Font Access API 只在支持它的桌面浏览器中作为可选能力出现, 并且必须经过用户授权。
 
-## Optional Repository Variables
+## 开发和验证
 
-- `CODEX_REVIEW_GATE_RUNNER_LABELS`: JSON runner label array. Defaults to
-  `["ubuntu-slim"]`; use `["ubuntu-latest"]` when `ubuntu-slim` is unavailable.
-- `CODEX_REVIEW_GATE_AUTO_RETRY=false`: disables scheduled retry jobs before a
-  runner is allocated.
-- `CODEX_REVIEW_GATE_EVENT_MODE`: `standard`, `comment-only`, or `full`.
-- `CODEX_REVIEW_GATE_BOT_LOGINS`: comma-separated additional Codex bot logins.
-- `CODEX_REVIEW_GATE_COMPLETION_SIGNAL_BUFFER_SECONDS`: clean completion buffer.
-- `CODEX_REVIEW_GATE_FAILED_FINDINGS_RECOVERY`: set to `false` to disable
-  same-head recovery after resolved Codex findings.
-- `CODEX_REVIEW_GATE_FAILED_FINDINGS_RECOVERY_MODE`: `head` or `fresh`.
+工程使用 Vite + TypeScript + pnpm。本地和 CI 验证命令:
+
+- `pnpm format:check`
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm test:e2e`
+- `pnpm build`
+
+Playwright e2e 是首版质量门槛的一部分, 覆盖上传图片生成非空预览、桌面/移动布局、显式非 ASCII glyph pack、source-pixels 网格模式、以及主要导出格式产生非空文件。
+
+## 设计文档
+
+- [Architecture](docs/design/architecture.md)
+- [Project State](docs/PROJECT_STATE.md)
+- [Project TODO](docs/PROJECT_TODO.md)
