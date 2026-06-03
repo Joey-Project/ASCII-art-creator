@@ -164,6 +164,24 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
   await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
 });
 
+test("can upload the same file again after cancelling source edits", async ({ page }) => {
+  await page.goto("/");
+  const upload = {
+    name: "repeat-upload.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  };
+
+  await page.locator("#image-input").setInputFiles(upload);
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+
+  await page.locator("#image-input").setInputFiles(upload);
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.locator("#status")).toContainText("Confirm source edits");
+});
+
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("User glyphs").fill("漢字🙂");

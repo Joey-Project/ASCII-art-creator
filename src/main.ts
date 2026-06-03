@@ -353,10 +353,12 @@ drawPreview();
 
 function bindControls(): void {
   getElement<HTMLInputElement>("image-input").addEventListener("change", async (event) => {
-    const file = (event.target as HTMLInputElement).files?.[0];
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
     if (!file) {
       return;
     }
+    input.value = "";
 
     const loadToken = nextImageLoadToken();
     try {
