@@ -89,14 +89,14 @@ type EditorPointerState =
       kind: "crop";
       pointerId: number;
       handle: CropHandle;
+      isNew: boolean;
       startPoint: Point;
       startCrop: CropEditOperation;
     }
   | {
       kind: "rotate";
       pointerId: number;
-      centerClient: Point;
-      startAngle: number;
+      startClient: Point;
       startDegrees: number;
     };
 
@@ -360,6 +360,10 @@ function bindControls(): void {
       return;
     }
     input.value = "";
+    if (state.editor) {
+      setStatus("Confirm or cancel source edits before uploading another image");
+      return;
+    }
 
     const loadToken = nextImageLoadToken();
     try {
@@ -696,7 +700,7 @@ function closeSourceEditor(options: { drainPendingGenerate?: boolean } = {}): vo
   state.editor = null;
   getElement<HTMLElement>("source-editor").hidden = true;
   getElement<HTMLElement>("source-editor-actions").hidden = true;
-  getElement<HTMLButtonElement>("generate-button").disabled = false;
+  getElement<HTMLButtonElement>("generate-button").disabled = state.isGenerating;
   syncEditSourceButton();
   if (options.drainPendingGenerate && state.pendingGenerateAfterCurrent && !state.isGenerating) {
     state.pendingGenerateAfterCurrent = false;
@@ -1000,6 +1004,7 @@ function handleEditorPointerDown(event: PointerEvent): void {
       kind: "crop",
       pointerId: event.pointerId,
       handle: handle ?? "se",
+      isNew: handle === null,
       startPoint: point,
       startCrop,
     };
@@ -1016,13 +1021,10 @@ function handleEditorPointerDown(event: PointerEvent): void {
       return;
     }
 
-    const center = outputCenterFromMetrics(editor.metrics);
-    const centerClient = worldPointToClient(sourceEditorCanvas, editor.metrics, center);
     editor.pointer = {
       kind: "rotate",
       pointerId: event.pointerId,
-      centerClient,
-      startAngle: pointAngleDegrees({ x: event.clientX, y: event.clientY }, centerClient),
+      startClient: { x: event.clientX, y: event.clientY },
       startDegrees: operation.degrees,
     };
     sourceEditorCanvas.setPointerCapture(event.pointerId);
@@ -1048,12 +1050,11 @@ function handleEditorPointerMove(event: PointerEvent): void {
     return;
   }
 
-  const currentAngle = pointAngleDegrees(
-    { x: event.clientX, y: event.clientY },
-    editor.pointer.centerClient,
-  );
-  operation.degrees =
-    editor.pointer.startDegrees + normalizeAngle(currentAngle - editor.pointer.startAngle);
+  const center = outputCenterFromMetrics(editor.metrics);
+  const centerClient = worldPointToClient(sourceEditorCanvas, editor.metrics, center);
+  const startAngle = pointAngleDegrees(editor.pointer.startClient, centerClient);
+  const currentAngle = pointAngleDegrees({ x: event.clientX, y: event.clientY }, centerClient);
+  operation.degrees = editor.pointer.startDegrees + normalizeAngle(currentAngle - startAngle);
   scheduleSourceEditorRender();
 }
 
@@ -1102,9 +1103,14 @@ function updateCropFromPointer(editor: SourceEditorSession, point: Point): void 
   }
 
   const pointer = editor.pointer;
-  const dx = point.x - pointer.startPoint.x;
-  const dy = point.y - pointer.startPoint.y;
-  const next = resizedCrop(pointer.startCrop, pointer.handle, dx, dy);
+  const next = pointer.isNew
+    ? newCropFromDrag(pointer.startCrop, pointer.startPoint, point)
+    : resizedCrop(
+        pointer.startCrop,
+        pointer.handle,
+        point.x - pointer.startPoint.x,
+        point.y - pointer.startPoint.y,
+      );
   const base = currentCropBaseDimensions(editor);
   Object.assign(
     operation,
@@ -1115,6 +1121,24 @@ function updateCropFromPointer(editor: SourceEditorSession, point: Point): void 
       height: base.height,
     }),
   );
+}
+
+function newCropFromDrag(
+  crop: CropEditOperation,
+  startPoint: Point,
+  point: Point,
+): CropEditOperation {
+  const growsLeft = point.x < startPoint.x;
+  const growsUp = point.y < startPoint.y;
+  const width = Math.max(MIN_CROP_SIZE, Math.abs(point.x - startPoint.x));
+  const height = Math.max(MIN_CROP_SIZE, Math.abs(point.y - startPoint.y));
+  return {
+    ...crop,
+    x: growsLeft ? startPoint.x - width : startPoint.x,
+    y: growsUp ? startPoint.y - height : startPoint.y,
+    width,
+    height,
+  };
 }
 
 function resizedCrop(

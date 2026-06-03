@@ -87,6 +87,7 @@ test("edits uploaded sources before generation and can reopen edit parameters", 
   await page.getByRole("button", { name: "Crop", exact: true }).click();
   await page.getByLabel("Expand crop").check();
   await dragEditorCanvas(page, 0.16, 0.18, 0.72, 0.74);
+  await dragEditorCanvas(page, 0.78, 0.78, 0.24, 0.28);
 
   await page.getByRole("button", { name: "Rotate", exact: true }).click();
   await dragEditorCanvas(page, 0.78, 0.52, 0.52, 0.2);
@@ -140,8 +141,7 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
   await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
 });
 
-test("cancels pending uploads when source edits are cancelled", async ({ page }) => {
-  await delayFirstBlobImageLoad(page);
+test("blocks replacement uploads while source edits are open", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
@@ -149,14 +149,16 @@ test("cancels pending uploads when source edits are cancelled", async ({ page })
   await page.getByRole("button", { name: "Edit source" }).click();
   await expect(page.locator("#source-editor")).toBeVisible();
   await page.locator("#image-input").setInputFiles({
-    name: "cancelled-replacement.png",
+    name: "blocked-replacement.png",
     mimeType: "image/png",
     buffer: fixturePngBuffer(),
   });
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.locator("#source-editor")).toBeHidden();
-  await page.waitForTimeout(700);
+  await expect(page.locator("#status")).toContainText(
+    "Confirm or cancel source edits before uploading another image",
+  );
+  await expect(page.locator("#source-editor")).toBeVisible();
 
+  await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.locator("#source-editor")).toBeHidden();
   await expect(page.locator("#source-name")).toContainText("sample-gradient");
   await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
@@ -224,8 +226,10 @@ test("keeps in-flight generation valid when source edits are cancelled", async (
   await page.getByRole("button", { name: "Edit source" }).click();
   await expect(page.locator("#source-editor")).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Generate mosaic" })).toBeDisabled();
 
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Generate mosaic" })).toBeEnabled();
   await expect(page.locator("#cell-count")).toContainText("32,400");
 });
 
