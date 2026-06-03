@@ -94,6 +94,8 @@ test("edits uploaded sources before generation and can reopen edit parameters", 
 
   await page.getByRole("button", { name: "CW 90", exact: true }).click();
   await page.getByRole("button", { name: "Flip H", exact: true }).click();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await expect(page.getByLabel("Expand crop")).toBeChecked();
   await page.getByRole("button", { name: "Reset rotate" }).click();
   await expect(page.locator("#source-editor-angle")).toHaveText("0 deg");
 
@@ -254,7 +256,9 @@ async function dragEditorCanvas(
   endXRatio: number,
   endYRatio: number,
 ): Promise<void> {
-  const box = await page.locator("#source-editor-canvas").boundingBox();
+  const canvas = page.locator("#source-editor-canvas");
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
   const startX = box!.x + box!.width * startXRatio;
   const startY = box!.y + box!.height * startYRatio;

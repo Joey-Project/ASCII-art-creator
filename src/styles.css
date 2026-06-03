@@ -281,7 +281,13 @@ input[type="file"] {
   gap: 16px;
 }
 
-.toolbar,
+.toolbar {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.toolbar-main,
 .stats {
   display: flex;
   align-items: center;
@@ -292,6 +298,17 @@ input[type="file"] {
 
 #status {
   color: #4f5b5e;
+}
+
+.source-editor-actions {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #d8e0de;
+}
+
+.source-editor-actions[hidden] {
+  display: none;
 }
 
 .source-editor {
@@ -316,8 +333,15 @@ input[type="file"] {
   padding: 0 10px;
 }
 
-.editor-toolbar-secondary {
-  justify-content: flex-end;
+.editor-toolbar-reset {
+  align-items: center;
+}
+
+.editor-commit-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .editor-expand {
@@ -418,6 +442,15 @@ input[type="file"] {
   }
 
   .editor-toolbar button {
+    flex: 1 1 110px;
+  }
+
+  .editor-commit-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .editor-commit-actions button {
     flex: 1 1 110px;
   }
 

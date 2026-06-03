@@ -19,7 +19,7 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 ## 使用模型
 
 1. 选择或上传图片。上传图会先进入编辑确认步骤; `Load sample` 会直接生成, 但之后也可以用 `Edit source` 回到编辑器。
-2. 在 source editor 中按需要 crop, rotate, flip。Crop 模式有辅助线和暗化 overlay; `Expand crop` 允许裁剪框超出图像并用透明 padding 补齐。
+2. 在 source editor 顶部两行按钮中按需要 crop, rotate, flip。第一行是编辑操作和确认/取消, 第二行是对应 reset。Crop 模式有辅助线和暗化 overlay; `Expand crop` 允许裁剪框超出图像并用透明 padding 补齐。
 3. 点 `Confirm` 后, 编辑结果会作为下游 source cache, 并按编辑后的尺寸推荐行列数。
 4. 调整网格设置: 使用推荐行列数, 手动设置行/列, 或按像素步长生成 cell。
 5. 选择 glyph 候选来源。默认 ASCII; 需要多语言或符号时, 输入字符或显式启用对应 glyph pack。User glyphs 会追加到已勾选 packs; 如果只想使用输入框里的字符, 需要取消勾选 ASCII 和其他 packs。
@@ -33,7 +33,7 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 
 如果没有任何 edit operation, `Confirm` 会保留原始上传图作为下游 source。实际进入编辑路径时, 工作 canvas 会限制在浏览器友好的尺寸预算内; 超大图片或过大的 expanded crop 会被限制到该预算, 以避免确认前就触发 canvas 内存或尺寸失败。拖拽 crop/rotate 时会缓存当前操作前的 replay stage, 并用 `requestAnimationFrame` 合并预览重绘, 避免每个 pointermove 都从原图重放所有操作。
 
-按功能 reset 会保守处理坐标依赖: reset rotate 或 flip 时, 这些变换之后创建的 crop 会被一并丢弃, 避免把旧坐标系里的裁剪框错误套到新图像空间。
+再次进入 Crop 会回到最近一个已有 crop operation, 不会因为后面做过 rotate 或 flip 就新建 full-frame crop。按功能 reset 会保守处理坐标依赖: reset rotate 或 flip 时, 这些变换之后创建的 crop 会被一并丢弃, 避免把旧坐标系里的裁剪框错误套到新图像空间。
 
 ## 字体和隐私
 

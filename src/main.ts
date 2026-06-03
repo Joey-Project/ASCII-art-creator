@@ -287,30 +287,36 @@ app.innerHTML = `
 
     <section class="workspace">
       <div class="toolbar">
-        <button id="generate-button" type="button">Generate mosaic</button>
-        <div id="status" role="status" aria-live="polite">Ready</div>
+        <div class="toolbar-main">
+          <button id="generate-button" type="button">Generate mosaic</button>
+          <div id="status" role="status" aria-live="polite">Ready</div>
+        </div>
+        <div id="source-editor-actions" class="source-editor-actions" hidden>
+          <div class="editor-toolbar">
+            <button id="crop-mode" class="secondary" type="button">Crop</button>
+            <button id="rotate-mode" class="secondary" type="button">Rotate</button>
+            <button id="rotate-ccw" class="secondary" type="button">CCW 90</button>
+            <button id="rotate-cw" class="secondary" type="button">CW 90</button>
+            <button id="flip-horizontal" class="secondary" type="button">Flip H</button>
+            <button id="flip-vertical" class="secondary" type="button">Flip V</button>
+            <label class="check editor-expand"><input id="crop-expand" type="checkbox" /> Expand crop</label>
+            <div class="editor-commit-actions">
+              <button id="cancel-source-edit" class="secondary" type="button">Cancel</button>
+              <button id="confirm-source-edit" type="button">Confirm</button>
+            </div>
+          </div>
+          <div class="editor-toolbar editor-toolbar-reset">
+            <button id="reset-crop" class="secondary" type="button">Reset crop</button>
+            <button id="reset-rotate" class="secondary" type="button">Reset rotate</button>
+            <button id="reset-flip" class="secondary" type="button">Reset flip</button>
+            <button id="reset-editor" class="secondary" type="button">Reset all</button>
+            <span id="source-editor-angle" class="value-output">0 deg</span>
+          </div>
+        </div>
       </div>
       <section id="source-editor" class="source-editor" aria-label="Source image editor" hidden>
-        <div class="editor-toolbar">
-          <button id="crop-mode" class="secondary" type="button">Crop</button>
-          <button id="rotate-mode" class="secondary" type="button">Rotate</button>
-          <button id="rotate-ccw" class="secondary" type="button">CCW 90</button>
-          <button id="rotate-cw" class="secondary" type="button">CW 90</button>
-          <button id="flip-horizontal" class="secondary" type="button">Flip H</button>
-          <button id="flip-vertical" class="secondary" type="button">Flip V</button>
-          <label class="check editor-expand"><input id="crop-expand" type="checkbox" /> Expand crop</label>
-        </div>
         <div class="editor-frame">
           <canvas id="source-editor-canvas" aria-label="Source edit preview"></canvas>
-        </div>
-        <div class="editor-toolbar editor-toolbar-secondary">
-          <button id="reset-crop" class="secondary" type="button">Reset crop</button>
-          <button id="reset-rotate" class="secondary" type="button">Reset rotate</button>
-          <button id="reset-flip" class="secondary" type="button">Reset flip</button>
-          <button id="reset-editor" class="secondary" type="button">Reset all</button>
-          <span id="source-editor-angle" class="value-output">0 deg</span>
-          <button id="cancel-source-edit" class="secondary" type="button">Cancel</button>
-          <button id="confirm-source-edit" type="button">Confirm</button>
         </div>
       </section>
       <div class="preview-frame">
@@ -659,6 +665,7 @@ function openSourceEditor(
     pointer: null,
   };
   getElement<HTMLElement>("source-editor").hidden = false;
+  getElement<HTMLElement>("source-editor-actions").hidden = false;
   getElement<HTMLButtonElement>("generate-button").disabled = true;
   syncEditSourceButton();
   renderSourceEditor();
@@ -671,6 +678,7 @@ function closeSourceEditor(): void {
   }
   state.editor = null;
   getElement<HTMLElement>("source-editor").hidden = true;
+  getElement<HTMLElement>("source-editor-actions").hidden = true;
   getElement<HTMLButtonElement>("generate-button").disabled = false;
   syncEditSourceButton();
 }
@@ -778,11 +786,10 @@ function resetEditorOperations(group: "all" | "crop" | "rotate" | "flip"): void 
 }
 
 function ensureCropOperation(editor: SourceEditorSession): void {
-  const lastIndex = editor.editState.operations.length - 1;
-  const lastOperation = editor.editState.operations[lastIndex];
-  if (lastOperation?.kind === "crop") {
-    editor.activeCropIndex = lastIndex;
-    cacheOperationBase(editor, lastIndex);
+  const existingIndex = findLastOperationIndex(editor.editState, "crop");
+  if (existingIndex !== -1) {
+    editor.activeCropIndex = existingIndex;
+    cacheOperationBase(editor, existingIndex);
     return;
   }
 
@@ -794,6 +801,18 @@ function ensureCropOperation(editor: SourceEditorSession): void {
   editor.editState.operations.push(defaultCropOperation(base.canvas.width, base.canvas.height));
   editor.activeCropIndex = editor.editState.operations.length - 1;
   editor.operationBase = base;
+}
+
+function findLastOperationIndex(
+  stateValue: SourceEditState,
+  kind: SourceEditOperation["kind"],
+): number {
+  for (let index = stateValue.operations.length - 1; index >= 0; index -= 1) {
+    if (stateValue.operations[index]?.kind === kind) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function cacheOperationBase(
