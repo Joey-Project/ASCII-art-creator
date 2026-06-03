@@ -29,11 +29,11 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 
 ## Source edit 语义
 
-编辑器保留原图和一组按用户操作顺序 replay 的 edit operations。编辑器打开时会暂时锁住下游生成和重新打开 source editor, 避免未确认上传被旧 source 覆盖。90 度旋转和 flip 不重采样; 无级旋转使用 Canvas `imageSmoothingQuality = high` 的浏览器高质量重采样。无级旋转会先保留完整外接画布, 只有最终确认时才执行旋转造成的出框裁剪; 如果后续 crop 使用 expand, 可以把旋转后原本会被裁掉的区域重新纳入输出。
+编辑器保留原图和一组按用户操作顺序 replay 的 edit stages。每次工具操作完成后都成为一个 stage; 如果尾部已经是同类 stage, 继续进入同一工具会编辑这个尾部 stage, 否则会追加新 stage。编辑器打开时会暂时锁住下游生成和重新打开 source editor, 避免未确认上传被旧 source 覆盖。90 度旋转和 flip 不重采样; 无级旋转使用 Canvas `imageSmoothingQuality = high` 的浏览器高质量重采样。无级旋转会先保留完整外接画布, 只有最终确认时才执行旋转造成的出框裁剪; 如果后续 crop 使用 expand, 可以把旋转后原本会被裁掉的区域重新纳入输出。
 
-如果没有任何 edit operation, `Confirm` 会保留原始上传图作为下游 source。实际进入编辑路径时, 工作 canvas 会限制在浏览器友好的尺寸预算内; 超大图片或过大的 expanded crop 会被限制到该预算, 以避免确认前就触发 canvas 内存或尺寸失败。拖拽 crop/rotate 时会缓存当前操作前的 replay stage, 并用 `requestAnimationFrame` 合并预览重绘, 避免每个 pointermove 都从原图重放所有操作。
+如果没有任何 edit stage, `Confirm` 会保留原始上传图作为下游 source。实际进入编辑路径时, 工作 canvas 会限制在浏览器友好的尺寸预算内; 超大图片或过大的 expanded crop 会被限制到该预算, 以避免确认前就触发 canvas 内存或尺寸失败。拖拽 crop/rotate 时会缓存当前操作前的 replay stage, 并用 `requestAnimationFrame` 合并预览重绘, 避免每个 pointermove 都从原图重放所有操作。
 
-再次进入 Crop 会回到最近一个已有 crop operation, 不会因为后面做过 rotate 或 flip 就新建 full-frame crop。按功能 reset 会保守处理坐标依赖: reset rotate 或 flip 时, 这些变换之后创建的 crop 会被一并丢弃, 避免把旧坐标系里的裁剪框错误套到新图像空间。
+例如先 rotate 再 crop 时, crop stage 会建立在旋转后的图像空间里; 先 crop 再 rotate 再 crop 时, 第二个 crop 是新的后续 stage, 不会改写前一个 crop。按功能 reset 会保守处理坐标依赖: reset rotate 或 flip 时, 这些变换之后创建的 crop 会被一并丢弃, 避免把旧坐标系里的裁剪框错误套到新图像空间。
 
 ## 字体和隐私
 

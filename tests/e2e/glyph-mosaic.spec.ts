@@ -95,8 +95,11 @@ test("edits uploaded sources before generation and can reopen edit parameters", 
   await page.getByRole("button", { name: "CW 90", exact: true }).click();
   await page.getByRole("button", { name: "Flip H", exact: true }).click();
   await page.getByRole("button", { name: "Crop", exact: true }).click();
-  await expect(page.getByLabel("Expand crop")).toBeChecked();
+  await expect(page.getByLabel("Expand crop")).not.toBeChecked();
   await page.getByRole("button", { name: "Reset rotate" }).click();
+  await page.getByRole("button", { name: "Reset flip" }).click();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await expect(page.getByLabel("Expand crop")).toBeChecked();
   await expect(page.locator("#source-editor-angle")).toHaveText("0 deg");
 
   await page.getByRole("button", { name: "Confirm" }).click();

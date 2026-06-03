@@ -24,8 +24,8 @@ superseded_by:
 - `Load sample` remains a direct-generate fast path, with `Edit source` available afterwards.
 - The editor blocks generation and source-editor reopening while unconfirmed edits are open, so a previous source cannot silently replace the current upload.
 - Edit controls live at the top of the workspace in two rows: operation controls first, reset controls second.
-- Edit operations replay in user order. Free-rotation clipping is deferred until final render so a later expanded crop can include content that would otherwise be clipped.
-- Re-entering crop mode targets the most recent existing crop operation, so crop state is preserved after later rotate or flip operations.
+- Edit stages replay in user order. Free-rotation clipping is deferred until final render so a later expanded crop can include content that would otherwise be clipped.
+- Re-entering a tool edits only the trailing same-kind stage; after rotate or flip, entering crop appends a new stage in the current replayed image space instead of mutating an older crop.
 - Interactive crop/rotate previews cache the replay stage before the active operation and coalesce pointer-driven redraws with `requestAnimationFrame`.
 - The generator continues to consume the same image/canvas source interface after confirmation.
 
@@ -41,3 +41,4 @@ superseded_by:
 - Unit coverage: 8 files / 40 tests passed
 - E2E coverage: 13 passed / 1 skipped across desktop and mobile projects
 - Internal review: `codex-readonly` isolated review `.codex-tmp/isolated-review-ieo00xdn`, final artifact `LGTM`
+- Stage-semantics refinement review: `codex-readonly` isolated review `.codex-tmp/isolated-review-ke6afha6`, final artifact `LGTM`

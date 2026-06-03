@@ -786,10 +786,11 @@ function resetEditorOperations(group: "all" | "crop" | "rotate" | "flip"): void 
 }
 
 function ensureCropOperation(editor: SourceEditorSession): void {
-  const existingIndex = findLastOperationIndex(editor.editState, "crop");
-  if (existingIndex !== -1) {
-    editor.activeCropIndex = existingIndex;
-    cacheOperationBase(editor, existingIndex);
+  const lastIndex = editor.editState.operations.length - 1;
+  const lastOperation = editor.editState.operations[lastIndex];
+  if (lastOperation?.kind === "crop") {
+    editor.activeCropIndex = lastIndex;
+    cacheOperationBase(editor, lastIndex);
     return;
   }
 
@@ -801,18 +802,6 @@ function ensureCropOperation(editor: SourceEditorSession): void {
   editor.editState.operations.push(defaultCropOperation(base.canvas.width, base.canvas.height));
   editor.activeCropIndex = editor.editState.operations.length - 1;
   editor.operationBase = base;
-}
-
-function findLastOperationIndex(
-  stateValue: SourceEditState,
-  kind: SourceEditOperation["kind"],
-): number {
-  for (let index = stateValue.operations.length - 1; index >= 0; index -= 1) {
-    if (stateValue.operations[index]?.kind === kind) {
-      return index;
-    }
-  }
-  return -1;
 }
 
 function cacheOperationBase(

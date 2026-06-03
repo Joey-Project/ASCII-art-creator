@@ -35,8 +35,8 @@ Source editing is a pre-generation stage. It must keep the original decoded imag
 - Uploading a new image opens the editor and does not update the generator source until the user confirms.
 - `Load sample` keeps the fast path and generates immediately, while `Edit source` can reopen the same editor later.
 - While the editor is open, generation and source-editor reopening are blocked so unconfirmed upload/edit state cannot be silently replaced by a previously confirmed source.
-- Operations replay in user order. Crop coordinates are interpreted in the current replayed image space.
-- Re-entering crop mode targets the most recent existing crop operation, even if later rotate or flip operations exist, so users can revise crop bounds without losing crop state.
+- Operations are committed as ordered stages and replay in user order. Crop coordinates are interpreted in the current replayed image space for the stage where the crop was created.
+- Re-entering the same tool edits only the trailing same-kind stage. If another stage was added later, entering crop or rotate appends a new stage instead of mutating an older one.
 - 90 degree rotations and flips use integer canvas transforms without smoothing.
 - Free rotation uses Canvas high-quality smoothing. The rotated content is first rendered into its expanded bounding canvas; the output-frame crop caused by rotation is deferred to the end so a later expanded crop can include areas that would otherwise have been clipped.
 - No-op confirmation preserves the original decoded image instead of allocating a full-size canvas. Once edit operations are present, the editor uses a capped work-canvas budget and limits expanded crop output to avoid browser canvas size and memory failures.
