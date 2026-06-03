@@ -102,6 +102,11 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
 
 test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByLabel("User glyphs")).toHaveAttribute(
+    "placeholder",
+    /uncheck ASCII to use only this field/,
+  );
+  await expect(page.getByText("User glyphs are added to checked packs")).toBeVisible();
   await page.getByLabel("ASCII").uncheck();
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Add at least one glyph");
@@ -126,6 +131,24 @@ test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async (
   expect(svg).toContain(">Ω</text>");
   expect(svg).toContain("font-family=");
   expect(svg).toContain("font-weight=");
+});
+
+test("filters fonts with fuzzy and exact search and labels font weights", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("Font weights")).toBeVisible();
+  await expect(page.getByText("400 Regular")).toBeVisible();
+  await expect(page.getByText("700 Bold")).toBeVisible();
+  await expect(page.locator("#font-scan-hint")).toContainText("Local Font Access");
+
+  await page.getByLabel("Search fonts").fill("msp");
+  await expect(page.getByText("Monospace")).toBeVisible();
+
+  await page.getByLabel("Exact text match").check();
+  await expect(page.getByText("No fonts match this search.")).toBeVisible();
+
+  await page.getByLabel("Search fonts").fill("mono");
+  await expect(page.getByText("Monospace")).toBeVisible();
 });
 
 test("reports invalid image and font uploads", async ({ page }) => {
