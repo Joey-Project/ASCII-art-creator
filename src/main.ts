@@ -18,7 +18,7 @@ import {
   cloneSourceEditState,
   compactSourceEditState,
   createDefaultSourceEditState,
-  defaultCropOperation,
+  defaultCropOperationForStage,
   drawEditorPreview,
   normalizeCrop,
   outputCenterFromMetrics,
@@ -131,9 +131,16 @@ const state: AppState = {
   editor: null,
 };
 
+let imageLoadToken = 0;
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("Missing app root");
+}
+
+function nextImageLoadToken(): number {
+  imageLoadToken += 1;
+  return imageLoadToken;
 }
 
 app.innerHTML = `
@@ -351,17 +358,24 @@ function bindControls(): void {
       return;
     }
 
+    const loadToken = nextImageLoadToken();
     try {
       setStatus("Loading image");
       const image = await loadImageFromFile(file);
+      if (loadToken !== imageLoadToken) {
+        return;
+      }
       openSourceEditor(image, file.name, createDefaultSourceEditState());
       setStatus("Confirm source edits to generate");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Image loading failed");
+      if (loadToken === imageLoadToken) {
+        setStatus(error instanceof Error ? error.message : "Image loading failed");
+      }
     }
   });
 
   getElement<HTMLButtonElement>("sample-button").addEventListener("click", async () => {
+    nextImageLoadToken();
     const sample = createSampleImage();
     if (state.editor) {
       closeSourceEditor();
@@ -380,6 +394,7 @@ function bindControls(): void {
       return;
     }
 
+    nextImageLoadToken();
     openSourceEditor(state.sourceOriginal, state.sourceName, state.sourceEdit);
     setStatus("Editing source image");
   });
@@ -799,7 +814,7 @@ function ensureCropOperation(editor: SourceEditorSession): void {
     editor.editState,
     editor.editState.operations.length,
   );
-  editor.editState.operations.push(defaultCropOperation(base.canvas.width, base.canvas.height));
+  editor.editState.operations.push(defaultCropOperationForStage(base));
   editor.activeCropIndex = editor.editState.operations.length - 1;
   editor.operationBase = base;
 }

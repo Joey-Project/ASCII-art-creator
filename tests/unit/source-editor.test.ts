@@ -3,6 +3,7 @@ import {
   compactSourceEditState,
   deferredRotationClipSize,
   defaultCropOperation,
+  defaultCropOperationForStage,
   fitFreeRotationInputSize,
   fitSizeWithinEditorLimit,
   MAX_EDIT_CANVAS_PIXELS,
@@ -66,6 +67,16 @@ describe("source editor geometry", () => {
     expect(deferredRotationClipSize(operations, 100, 60)).toEqual({ width: 80, height: 40 });
   });
 
+  it("preserves the first deferred frame across multiple free rotations", () => {
+    const operations: SourceEditState["operations"] = [
+      { kind: "rotateFree", degrees: 20 },
+      { kind: "flip", axis: "horizontal" },
+      { kind: "rotateFree", degrees: -15 },
+    ];
+
+    expect(deferredRotationClipSize(operations, 100, 60)).toEqual({ width: 100, height: 60 });
+  });
+
   it("swaps the deferred free-rotation clip when a later 90 degree rotation runs", () => {
     const operations: SourceEditState["operations"] = [
       { kind: "rotateFree", degrees: 20 },
@@ -73,6 +84,37 @@ describe("source editor geometry", () => {
     ];
 
     expect(deferredRotationClipSize(operations, 120, 70)).toEqual({ width: 70, height: 120 });
+  });
+
+  it("uses the deferred output frame when crop mode opens after free rotation", () => {
+    expect(
+      defaultCropOperationForStage({
+        canvas: { width: 130, height: 100 } as HTMLCanvasElement,
+        deferredRotationClip: { width: 100, height: 60 },
+      }),
+    ).toEqual({
+      kind: "crop",
+      x: 15,
+      y: 20,
+      width: 100,
+      height: 60,
+      expand: false,
+    });
+  });
+
+  it("marks deferred crop defaults as expanded when transparent padding is needed", () => {
+    expect(
+      defaultCropOperationForStage({
+        canvas: { width: 100, height: 10 } as HTMLCanvasElement,
+        deferredRotationClip: { width: 100, height: 80 },
+      }),
+    ).toMatchObject({
+      x: 0,
+      y: -35,
+      width: 100,
+      height: 80,
+      expand: true,
+    });
   });
 
   it("clamps non-expanded crops and preserves expanded transparent padding", () => {
@@ -117,6 +159,10 @@ describe("source editor geometry", () => {
     expect(bounds.width).toBeLessThanOrEqual(MAX_EDIT_CANVAS_SIDE);
     expect(bounds.height).toBeLessThanOrEqual(MAX_EDIT_CANVAS_SIDE);
     expect(bounds.width * bounds.height).toBeLessThanOrEqual(MAX_EDIT_CANVAS_PIXELS);
+
+    const narrowFitted = fitFreeRotationInputSize(10_000, 1, 45);
+    const narrowBounds = rotatedBoundingSize(narrowFitted.width, narrowFitted.height, 45);
+    expect(narrowBounds.width * narrowBounds.height).toBeLessThanOrEqual(MAX_EDIT_CANVAS_PIXELS);
   });
 
   it("removes operations by feature group", () => {

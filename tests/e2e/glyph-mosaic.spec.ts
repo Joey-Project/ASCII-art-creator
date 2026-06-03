@@ -122,6 +122,48 @@ test("edits uploaded sources before generation and can reopen edit parameters", 
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 });
 
+test("ignores stale uploads when another source is loaded first", async ({ page }) => {
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (!descriptor?.get || !descriptor.set) {
+      return;
+    }
+
+    const NativeImage = window.Image;
+    let delayedBlobLoads = 0;
+    window.Image = function patchedImage(width?: number, height?: number) {
+      const image = new NativeImage(width, height);
+      Object.defineProperty(image, "src", {
+        configurable: true,
+        get() {
+          return descriptor.get!.call(image);
+        },
+        set(value: string) {
+          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? 350 : 0;
+          delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
+          window.setTimeout(() => descriptor.set!.call(image, value), delay);
+        },
+      });
+      return image;
+    } as typeof Image;
+    window.Image.prototype = NativeImage.prototype;
+  });
+
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "slow-upload.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.waitForTimeout(700);
+
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#source-name")).toContainText("sample-gradient");
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+});
+
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("User glyphs").fill("漢字🙂");
@@ -271,6 +313,13 @@ async function dragEditorCanvas(
   await page.mouse.down();
   await page.mouse.move(endX, endY, { steps: 8 });
   await page.mouse.up();
+}
+
+function fixturePngBuffer(): Buffer {
+  return Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAgklEQVR4nO3ZwQnAIBAFwYz779l2UBG8BKUIgeA2EJh99p5hMElvG8/rCwD8kUBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQOB1rfu+p6PrnYvLWlQdVx9bMwcC5JOTmXMhICAAAAAAAAAAAAB4Gg+KOQdKPkSrjAAAAABJRU5ErkJggg==",
+    "base64",
+  );
 }
 
 function pngDimensions(buffer: Buffer): { width: number; height: number } {

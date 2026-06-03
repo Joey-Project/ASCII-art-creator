@@ -76,6 +76,8 @@ interface FreeRotateResult {
   canvas: HTMLCanvasElement;
   sourceWidth: number;
   sourceHeight: number;
+  scaleX: number;
+  scaleY: number;
 }
 
 export const MIN_CROP_SIZE = 8;
@@ -232,6 +234,28 @@ export function defaultCropOperation(
   };
 }
 
+export function defaultCropOperationForStage(
+  stage: Pick<SourceEditRenderStage, "canvas" | "deferredRotationClip">,
+): CropEditOperation {
+  const deferred = stage.deferredRotationClip;
+  if (!deferred) {
+    return defaultCropOperation(stage.canvas.width, stage.canvas.height);
+  }
+
+  const crop = {
+    kind: "crop" as const,
+    x: (stage.canvas.width - deferred.width) / 2,
+    y: (stage.canvas.height - deferred.height) / 2,
+    width: deferred.width,
+    height: deferred.height,
+    expand: false,
+  };
+  return {
+    ...crop,
+    expand: cropExtendsBeyondCanvas(crop, stage.canvas),
+  };
+}
+
 export function rotatedBoundingSize(
   width: number,
   height: number,
@@ -269,20 +293,64 @@ export function fitFreeRotationInputSize(
   height: number,
   degrees: number,
 ): { width: number; height: number } {
-  const initialBounds = rotatedBoundingSize(width, height, degrees);
-  const fittedBounds = fitSizeWithinEditorLimit(initialBounds.width, initialBounds.height);
-  if (fittedBounds.width === initialBounds.width && fittedBounds.height === initialBounds.height) {
-    return { width, height };
+  const safeWidth = Math.max(1, Math.round(width));
+  const safeHeight = Math.max(1, Math.round(height));
+  if (isWithinEditorLimit(rotatedBoundingSize(safeWidth, safeHeight, degrees))) {
+    return { width: safeWidth, height: safeHeight };
   }
 
-  const scale = Math.min(
-    fittedBounds.width / initialBounds.width,
-    fittedBounds.height / initialBounds.height,
-  );
+  let low = 0;
+  let high = 1;
+  for (let index = 0; index < 32; index += 1) {
+    const mid = (low + high) / 2;
+    const candidate = scaledSize(safeWidth, safeHeight, mid);
+    if (isWithinEditorLimit(rotatedBoundingSize(candidate.width, candidate.height, degrees))) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return scaledSize(safeWidth, safeHeight, low);
+}
+
+function scaledSize(
+  width: number,
+  height: number,
+  scale: number,
+): { width: number; height: number } {
   return {
     width: Math.max(1, Math.floor(width * scale)),
     height: Math.max(1, Math.floor(height * scale)),
   };
+}
+
+function isWithinEditorLimit(size: { width: number; height: number }): boolean {
+  return (
+    size.width <= MAX_EDIT_CANVAS_SIDE &&
+    size.height <= MAX_EDIT_CANVAS_SIDE &&
+    size.width * size.height <= MAX_EDIT_CANVAS_PIXELS
+  );
+}
+
+function scaleDeferredClip(
+  deferred: SourceEditDeferredClip,
+  scaleX: number,
+  scaleY: number,
+): SourceEditDeferredClip {
+  return {
+    width: Math.max(1, Math.round(deferred.width * scaleX)),
+    height: Math.max(1, Math.round(deferred.height * scaleY)),
+  };
+}
+
+function cropExtendsBeyondCanvas(crop: CropEditOperation, canvas: HTMLCanvasElement): boolean {
+  return (
+    crop.x < 0 ||
+    crop.y < 0 ||
+    crop.x + crop.width > canvas.width ||
+    crop.y + crop.height > canvas.height
+  );
 }
 
 export function deferredRotationClipSize(
@@ -313,8 +381,13 @@ export function deferredRotationClipSize(
       }
       case "rotateFree": {
         if (Math.abs(operation.degrees) >= 0.0001) {
-          deferred = { width, height };
-          const bounds = rotatedBoundingSize(width, height, operation.degrees);
+          const fitted = fitFreeRotationInputSize(width, height, operation.degrees);
+          if (deferred) {
+            deferred = scaleDeferredClip(deferred, fitted.width / width, fitted.height / height);
+          } else {
+            deferred = { width: fitted.width, height: fitted.height };
+          }
+          const bounds = rotatedBoundingSize(fitted.width, fitted.height, operation.degrees);
           width = bounds.width;
           height = bounds.height;
         }
@@ -538,7 +611,9 @@ function replayEditOperations(
       case "rotateFree":
         if (Math.abs(operation.degrees) >= 0.0001) {
           const rotated = renderFreeRotatedExpandedCanvas(canvas, operation.degrees);
-          deferred = { width: rotated.sourceWidth, height: rotated.sourceHeight };
+          deferred = deferred
+            ? scaleDeferredClip(deferred, rotated.scaleX, rotated.scaleY)
+            : { width: rotated.sourceWidth, height: rotated.sourceHeight };
           canvas = rotated.canvas;
         }
         break;
@@ -669,7 +744,13 @@ function renderFreeRotatedExpandedCanvas(
   context.translate(canvas.width / 2, canvas.height / 2);
   context.rotate(degreesToRadians(degrees));
   context.drawImage(working, -working.width / 2, -working.height / 2);
-  return { canvas, sourceWidth: working.width, sourceHeight: working.height };
+  return {
+    canvas,
+    sourceWidth: working.width,
+    sourceHeight: working.height,
+    scaleX: working.width / source.width,
+    scaleY: working.height / source.height,
+  };
 }
 
 function renderResizedCanvas(
@@ -693,18 +774,14 @@ function renderCenteredClipCanvas(
   targetWidth: number,
   targetHeight: number,
 ): HTMLCanvasElement {
-  const crop = normalizeCrop(
-    {
-      kind: "crop",
-      x: (source.width - targetWidth) / 2,
-      y: (source.height - targetHeight) / 2,
-      width: targetWidth,
-      height: targetHeight,
-      expand: false,
-    },
-    { x: 0, y: 0, width: source.width, height: source.height },
-  );
-  return renderCroppedCanvas(source, crop);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(targetWidth));
+  canvas.height = Math.max(1, Math.round(targetHeight));
+  const context = requiredContext(canvas);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(source, (canvas.width - source.width) / 2, (canvas.height - source.height) / 2);
+  return canvas;
 }
 
 function drawDimmedCropOverlay(

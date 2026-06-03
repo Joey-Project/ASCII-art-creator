@@ -5,7 +5,7 @@ status: completed
 created: 2026-06-03
 updated: 2026-06-03
 branch: wip/source-image-editor
-pr:
+pr: 4
 supersedes: []
 superseded_by:
 ---
@@ -38,7 +38,8 @@ superseded_by:
 - User-facing docs: `README.md`
 - Design doc: `docs/design/architecture.md`
 - Validation: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`
-- Unit coverage: 8 files / 40 tests passed
-- E2E coverage: 13 passed / 1 skipped across desktop and mobile projects
+- Unit coverage: 8 files / 43 tests passed
+- E2E coverage: 15 passed / 1 skipped across desktop and mobile projects
 - Internal review: `codex-readonly` isolated review `.codex-tmp/isolated-review-ieo00xdn`, final artifact `LGTM`
 - Stage-semantics refinement review: `codex-readonly` isolated review `.codex-tmp/isolated-review-ke6afha6`, final artifact `LGTM`
+- PR review hardening: preserved deferred free-rotation frames across repeated rotations, kept final clipped frames padded with transparency, fit free-rotation bounds under the editor canvas budget, and ignored stale async upload decodes.
