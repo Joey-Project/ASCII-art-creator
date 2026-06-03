@@ -39,7 +39,7 @@ jobs:
       - name: Build
         run: pnpm build
         env:
-          VITE_BASE_PATH: /ASCII-art-creator/
+          VITE_BASE_PATH: /
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

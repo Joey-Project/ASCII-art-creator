@@ -2,6 +2,8 @@
 
 Glyph Mosaic Creator 是一个静态 Web App, 用字符和字形把用户上传的图片重建成 typographic mosaic。首版面向 GitHub Pages 部署, 采用 Vite + TypeScript + pnpm 的静态 SPA 形态, 不需要服务端处理图片或字体。
 
+Production domain: <https://glyph-mosaic-creator.mahane.me/>
+
 ## 核心能力
 
 - 上传图片后在浏览器本地生成 glyph mosaic。
