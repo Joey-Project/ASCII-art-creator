@@ -8,7 +8,8 @@ The default candidate library is ASCII only. Non-ASCII glyphs, including CJK, ka
 
 ## Product Flow
 
-- Image input: users upload an image, which is decoded locally into canvas/image data.
+- Image input: users upload an image, which is decoded locally and then confirmed through a browser-local source editor before generation.
+- Source editing: crop, rotate, and flip operations are stored as replayable edit operations against the original image. The confirmed result is cached as a canvas and becomes the source consumed by the generator.
 - Grid setup: users choose row/column counts directly, or choose source pixels per glyph. The app recommends initial rows and columns from uploaded image dimensions, keeping aspect ratio and balancing detail against preview performance.
 - Glyph setup: default ASCII candidates are always available. User text and explicit glyph packs can add multilingual or symbol candidates.
 - Font setup: default web-safe font presets are available first. Uploaded fonts are registered with `FontFace`. Local Font Access is a progressive enhancement for supported desktop browsers and must degrade cleanly when unavailable.
@@ -26,6 +27,22 @@ The renderer treats the output as a matrix of cells. A cell stores:
 - `sourceColor`: sampled source color for color modes.
 
 Cell-level mixing is required. The renderer may use canvas text APIs to draw each cell, but it must not hand a long mixed-font string to the browser and rely on normal text shaping to decide the mosaic.
+
+## Source Editing Model
+
+Source editing is a pre-generation stage. It must keep the original decoded image, the replayable operation list, and the confirmed canvas cache separate:
+
+- Uploading a new image opens the editor and does not update the generator source until the user confirms.
+- `Load sample` keeps the fast path and generates immediately, while `Edit source` can reopen the same editor later.
+- While the editor is open, generation and source-editor reopening are blocked so unconfirmed upload/edit state cannot be silently replaced by a previously confirmed source.
+- Operations replay in user order. Crop coordinates are interpreted in the current replayed image space.
+- 90 degree rotations and flips use integer canvas transforms without smoothing.
+- Free rotation uses Canvas high-quality smoothing. The rotated content is first rendered into its expanded bounding canvas; the output-frame crop caused by rotation is deferred to the end so a later expanded crop can include areas that would otherwise have been clipped.
+- No-op confirmation preserves the original decoded image instead of allocating a full-size canvas. Once edit operations are present, the editor uses a capped work-canvas budget and limits expanded crop output to avoid browser canvas size and memory failures.
+- Interactive crop/rotate previews cache the replay stage before the active operation and coalesce pointer-driven redraws with `requestAnimationFrame`. This keeps click-order replay semantics while avoiding full source replay on every pointermove.
+- Reset all clears the operation list. Feature-specific resets remove crop, rotate, or flip operations while preserving the original image; reset of rotate/flip also drops later crop operations whose coordinates depended on the removed transform space.
+
+The mosaic generator should continue to consume only an `HTMLImageElement`, `HTMLCanvasElement`, or `ImageBitmap`. It should not know whether the source came directly from upload, sample generation, or the editor's confirmed canvas cache.
 
 ## Candidate Library
 

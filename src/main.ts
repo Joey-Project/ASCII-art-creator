@@ -14,6 +14,28 @@ import { applySettingsToPreviewCanvas, cssFontFamily } from "./core/canvas";
 import { colorFromString } from "./core/colors";
 import { createSampleImage, loadImageFromFile } from "./core/source-image";
 import {
+  canvasPointToWorld,
+  cloneSourceEditState,
+  compactSourceEditState,
+  createDefaultSourceEditState,
+  defaultCropOperation,
+  drawEditorPreview,
+  normalizeCrop,
+  outputCenterFromMetrics,
+  pointAngleDegrees,
+  renderEditedSourceStage,
+  renderEditedSource,
+  resetOperations,
+  MIN_CROP_SIZE,
+  type CropEditOperation,
+  type EditorRenderMetrics,
+  type Point,
+  type SourceEditorMode,
+  type SourceEditOperation,
+  type SourceEditRenderStage,
+  type SourceEditState,
+} from "./core/source-editor";
+import {
   BUILTIN_FONTS,
   localFontAccessStatus,
   registerUploadedFonts,
@@ -48,11 +70,46 @@ interface AppState {
   fontSearch: string;
   fontExactMatch: boolean;
   source: HTMLImageElement | HTMLCanvasElement | null;
+  sourceOriginal: HTMLImageElement | HTMLCanvasElement | null;
+  sourceEdit: SourceEditState | null;
   sourceName: string;
   mosaic: Mosaic | null;
   isGenerating: boolean;
+  pendingGenerateAfterCurrent: boolean;
   needsRegenerate: boolean;
   generationVersion: number;
+  editor: SourceEditorSession | null;
+}
+
+type CropHandle = "move" | "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+
+type EditorPointerState =
+  | {
+      kind: "crop";
+      pointerId: number;
+      handle: CropHandle;
+      startPoint: Point;
+      startCrop: CropEditOperation;
+    }
+  | {
+      kind: "rotate";
+      pointerId: number;
+      center: Point;
+      startAngle: number;
+      startDegrees: number;
+    };
+
+interface SourceEditorSession {
+  original: HTMLImageElement | HTMLCanvasElement;
+  sourceName: string;
+  editState: SourceEditState;
+  mode: SourceEditorMode;
+  activeCropIndex: number | null;
+  activeRotateIndex: number | null;
+  operationBase: SourceEditRenderStage | null;
+  renderFrameId: number | null;
+  metrics: EditorRenderMetrics | null;
+  pointer: EditorPointerState | null;
 }
 
 const state: AppState = {
@@ -63,11 +120,15 @@ const state: AppState = {
   fontSearch: "",
   fontExactMatch: false,
   source: null,
+  sourceOriginal: null,
+  sourceEdit: null,
   sourceName: "sample",
   mosaic: null,
   isGenerating: false,
+  pendingGenerateAfterCurrent: false,
   needsRegenerate: false,
   generationVersion: 0,
+  editor: null,
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -87,11 +148,14 @@ app.innerHTML = `
 
       <div class="control-group">
         <h2>Source</h2>
-        <label class="file-drop">
-          <input id="image-input" type="file" accept="image/*" />
-          <span>Upload image</span>
-        </label>
-        <button id="sample-button" class="secondary" type="button">Load sample</button>
+        <div class="inline-actions">
+          <label class="file-drop">
+            <input id="image-input" type="file" accept="image/*" />
+            <span>Upload image</span>
+          </label>
+          <button id="sample-button" class="secondary" type="button">Load sample</button>
+        </div>
+        <button id="edit-source" class="secondary" type="button" disabled>Edit source</button>
       </div>
 
       <div class="control-group">
@@ -226,6 +290,29 @@ app.innerHTML = `
         <button id="generate-button" type="button">Generate mosaic</button>
         <div id="status" role="status" aria-live="polite">Ready</div>
       </div>
+      <section id="source-editor" class="source-editor" aria-label="Source image editor" hidden>
+        <div class="editor-toolbar">
+          <button id="crop-mode" class="secondary" type="button">Crop</button>
+          <button id="rotate-mode" class="secondary" type="button">Rotate</button>
+          <button id="rotate-ccw" class="secondary" type="button">CCW 90</button>
+          <button id="rotate-cw" class="secondary" type="button">CW 90</button>
+          <button id="flip-horizontal" class="secondary" type="button">Flip H</button>
+          <button id="flip-vertical" class="secondary" type="button">Flip V</button>
+          <label class="check editor-expand"><input id="crop-expand" type="checkbox" /> Expand crop</label>
+        </div>
+        <div class="editor-frame">
+          <canvas id="source-editor-canvas" aria-label="Source edit preview"></canvas>
+        </div>
+        <div class="editor-toolbar editor-toolbar-secondary">
+          <button id="reset-crop" class="secondary" type="button">Reset crop</button>
+          <button id="reset-rotate" class="secondary" type="button">Reset rotate</button>
+          <button id="reset-flip" class="secondary" type="button">Reset flip</button>
+          <button id="reset-editor" class="secondary" type="button">Reset all</button>
+          <span id="source-editor-angle" class="value-output">0 deg</span>
+          <button id="cancel-source-edit" class="secondary" type="button">Cancel</button>
+          <button id="confirm-source-edit" type="button">Confirm</button>
+        </div>
+      </section>
       <div class="preview-frame">
         <canvas id="preview-canvas" aria-label="Mosaic preview"></canvas>
       </div>
@@ -239,6 +326,7 @@ app.innerHTML = `
 `;
 
 const previewCanvas = getElement<HTMLCanvasElement>("preview-canvas");
+const sourceEditorCanvas = getElement<HTMLCanvasElement>("source-editor-canvas");
 const status = getElement<HTMLDivElement>("status");
 const candidateCount = getElement<HTMLSpanElement>("candidate-count");
 const cellCount = getElement<HTMLSpanElement>("cell-count");
@@ -259,22 +347,35 @@ function bindControls(): void {
 
     try {
       setStatus("Loading image");
-      state.source = await loadImageFromFile(file);
-      state.sourceName = file.name;
-      applyRecommendedGrid(state.source);
-      markNeedsRegenerate();
-      await generate();
+      const image = await loadImageFromFile(file);
+      openSourceEditor(image, file.name, createDefaultSourceEditState());
+      setStatus("Confirm source edits to generate");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Image loading failed");
     }
   });
 
   getElement<HTMLButtonElement>("sample-button").addEventListener("click", async () => {
-    state.source = createSampleImage();
-    state.sourceName = "sample-gradient";
-    applyRecommendedGrid(state.source);
-    markNeedsRegenerate();
-    await generate();
+    const sample = createSampleImage();
+    if (state.editor) {
+      closeSourceEditor();
+    }
+    await commitSource(sample, sample, "sample-gradient", createDefaultSourceEditState());
+  });
+
+  getElement<HTMLButtonElement>("edit-source").addEventListener("click", () => {
+    if (state.editor) {
+      setStatus("Confirm or cancel source edits before reopening the source editor");
+      return;
+    }
+
+    if (!state.sourceOriginal || !state.sourceEdit) {
+      setStatus("Upload an image or load the sample before editing");
+      return;
+    }
+
+    openSourceEditor(state.sourceOriginal, state.sourceName, state.sourceEdit);
+    setStatus("Editing source image");
   });
 
   getElement<HTMLTextAreaElement>("glyph-input").addEventListener("input", (event) => {
@@ -443,8 +544,75 @@ function bindControls(): void {
     void generate();
   });
 
+  getElement<HTMLButtonElement>("crop-mode").addEventListener("click", () => {
+    toggleEditorMode("crop");
+  });
+  getElement<HTMLButtonElement>("rotate-mode").addEventListener("click", () => {
+    toggleEditorMode("rotate");
+  });
+  getElement<HTMLButtonElement>("rotate-ccw").addEventListener("click", () => {
+    appendEditorOperation({ kind: "rotate90", turns: -1 });
+  });
+  getElement<HTMLButtonElement>("rotate-cw").addEventListener("click", () => {
+    appendEditorOperation({ kind: "rotate90", turns: 1 });
+  });
+  getElement<HTMLButtonElement>("flip-horizontal").addEventListener("click", () => {
+    appendEditorOperation({ kind: "flip", axis: "horizontal" });
+  });
+  getElement<HTMLButtonElement>("flip-vertical").addEventListener("click", () => {
+    appendEditorOperation({ kind: "flip", axis: "vertical" });
+  });
+  getElement<HTMLInputElement>("crop-expand").addEventListener("change", (event) => {
+    const checked = (event.target as HTMLInputElement).checked;
+    const editor = state.editor;
+    if (!editor) {
+      return;
+    }
+    if (editor.mode !== "crop") {
+      editor.mode = "crop";
+    }
+    ensureCropOperation(editor);
+    if (editor.activeCropIndex === null) {
+      return;
+    }
+    const operation = editor.editState.operations[editor.activeCropIndex];
+    if (operation?.kind === "crop") {
+      operation.expand = checked;
+      normalizeActiveCrop(editor);
+      renderSourceEditor();
+    }
+  });
+  getElement<HTMLButtonElement>("reset-crop").addEventListener("click", () => {
+    resetEditorOperations("crop");
+  });
+  getElement<HTMLButtonElement>("reset-rotate").addEventListener("click", () => {
+    resetEditorOperations("rotate");
+  });
+  getElement<HTMLButtonElement>("reset-flip").addEventListener("click", () => {
+    resetEditorOperations("flip");
+  });
+  getElement<HTMLButtonElement>("reset-editor").addEventListener("click", () => {
+    resetEditorOperations("all");
+  });
+  getElement<HTMLButtonElement>("cancel-source-edit").addEventListener("click", () => {
+    closeSourceEditor();
+    setStatus(state.source ? "Source edit cancelled" : "Upload cancelled");
+  });
+  getElement<HTMLButtonElement>("confirm-source-edit").addEventListener("click", () => {
+    void confirmSourceEditor();
+  });
+  sourceEditorCanvas.addEventListener("pointerdown", handleEditorPointerDown);
+  sourceEditorCanvas.addEventListener("pointermove", handleEditorPointerMove);
+  sourceEditorCanvas.addEventListener("pointerup", handleEditorPointerEnd);
+  sourceEditorCanvas.addEventListener("pointercancel", handleEditorPointerEnd);
+
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-export]")) {
     button.addEventListener("click", async () => {
+      if (state.editor) {
+        setStatus("Confirm or cancel source edits before exporting");
+        return;
+      }
+
       if (!state.mosaic) {
         setStatus("Generate a mosaic before exporting");
         return;
@@ -466,6 +634,535 @@ function bindControls(): void {
       }
     });
   }
+}
+
+function openSourceEditor(
+  original: HTMLImageElement | HTMLCanvasElement,
+  sourceNameValue: string,
+  editState: SourceEditState,
+): void {
+  if (state.editor?.renderFrameId != null) {
+    cancelAnimationFrame(state.editor.renderFrameId);
+  }
+  state.generationVersion += 1;
+  state.pendingGenerateAfterCurrent = false;
+  state.editor = {
+    original,
+    sourceName: sourceNameValue,
+    editState: cloneSourceEditState(editState),
+    mode: "idle",
+    activeCropIndex: null,
+    activeRotateIndex: null,
+    operationBase: null,
+    renderFrameId: null,
+    metrics: null,
+    pointer: null,
+  };
+  getElement<HTMLElement>("source-editor").hidden = false;
+  getElement<HTMLButtonElement>("generate-button").disabled = true;
+  syncEditSourceButton();
+  renderSourceEditor();
+}
+
+function closeSourceEditor(): void {
+  const editor = state.editor;
+  if (editor?.renderFrameId != null) {
+    cancelAnimationFrame(editor.renderFrameId);
+  }
+  state.editor = null;
+  getElement<HTMLElement>("source-editor").hidden = true;
+  getElement<HTMLButtonElement>("generate-button").disabled = false;
+  syncEditSourceButton();
+}
+
+async function confirmSourceEditor(): Promise<void> {
+  const editor = state.editor;
+  if (!editor) {
+    return;
+  }
+
+  try {
+    setStatus("Applying source edits");
+    const compactedEditState = compactSourceEditState(editor.original, editor.editState);
+    const rendered =
+      compactedEditState.operations.length === 0
+        ? editor.original
+        : renderEditedSource(editor.original, compactedEditState);
+    const original = editor.original;
+    const editState = cloneSourceEditState(compactedEditState);
+    const name = editor.sourceName;
+    closeSourceEditor();
+    await commitSource(rendered, original, name, editState);
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Source edit failed");
+  }
+}
+
+async function commitSource(
+  source: HTMLImageElement | HTMLCanvasElement,
+  original: HTMLImageElement | HTMLCanvasElement,
+  sourceNameValue: string,
+  editState: SourceEditState,
+): Promise<void> {
+  state.source = source;
+  state.sourceOriginal = original;
+  state.sourceEdit = cloneSourceEditState(editState);
+  state.sourceName = sourceNameValue;
+  state.mosaic = null;
+  state.needsRegenerate = false;
+  state.generationVersion += 1;
+  applyRecommendedGrid(source);
+  syncEditSourceButton();
+  updateStats();
+  drawPreview();
+  await generate();
+}
+
+function toggleEditorMode(mode: SourceEditorMode): void {
+  const editor = state.editor;
+  if (!editor) {
+    setStatus("Upload an image before editing");
+    return;
+  }
+
+  if (editor.mode === mode) {
+    editor.mode = "idle";
+    editor.activeCropIndex = null;
+    editor.activeRotateIndex = null;
+    editor.operationBase = null;
+    editor.pointer = null;
+  } else {
+    editor.mode = mode;
+    editor.pointer = null;
+    if (mode === "crop") {
+      ensureCropOperation(editor);
+      editor.activeRotateIndex = null;
+    } else if (mode === "rotate") {
+      ensureRotateOperation(editor);
+      editor.activeCropIndex = null;
+    }
+  }
+
+  renderSourceEditor();
+}
+
+function appendEditorOperation(operation: SourceEditOperation): void {
+  const editor = state.editor;
+  if (!editor) {
+    setStatus("Upload an image before editing");
+    return;
+  }
+
+  editor.editState.operations.push(operation);
+  editor.mode = "idle";
+  editor.activeCropIndex = null;
+  editor.activeRotateIndex = null;
+  editor.operationBase = null;
+  editor.pointer = null;
+  renderSourceEditor();
+}
+
+function resetEditorOperations(group: "all" | "crop" | "rotate" | "flip"): void {
+  const editor = state.editor;
+  if (!editor) {
+    return;
+  }
+
+  editor.editState = resetOperations(editor.editState, group);
+  editor.mode = "idle";
+  editor.activeCropIndex = null;
+  editor.activeRotateIndex = null;
+  editor.operationBase = null;
+  editor.pointer = null;
+  renderSourceEditor();
+}
+
+function ensureCropOperation(editor: SourceEditorSession): void {
+  const lastIndex = editor.editState.operations.length - 1;
+  const lastOperation = editor.editState.operations[lastIndex];
+  if (lastOperation?.kind === "crop") {
+    editor.activeCropIndex = lastIndex;
+    cacheOperationBase(editor, lastIndex);
+    return;
+  }
+
+  const base = renderEditedSourceStage(
+    editor.original,
+    editor.editState,
+    editor.editState.operations.length,
+  );
+  editor.editState.operations.push(defaultCropOperation(base.canvas.width, base.canvas.height));
+  editor.activeCropIndex = editor.editState.operations.length - 1;
+  editor.operationBase = base;
+}
+
+function cacheOperationBase(
+  editor: SourceEditorSession,
+  operationIndex: number,
+): SourceEditRenderStage {
+  if (editor.operationBase?.operationIndex === operationIndex) {
+    return editor.operationBase;
+  }
+
+  const base = renderEditedSourceStage(editor.original, editor.editState, operationIndex);
+  editor.operationBase = base;
+  return base;
+}
+
+function currentCropBaseDimensions(editor: SourceEditorSession): { width: number; height: number } {
+  if (editor.activeCropIndex === null) {
+    return { width: 1, height: 1 };
+  }
+
+  const base = cacheOperationBase(editor, editor.activeCropIndex);
+  return {
+    width: base.canvas.width,
+    height: base.canvas.height,
+  };
+}
+
+function scheduleSourceEditorRender(): void {
+  const editor = state.editor;
+  if (!editor || editor.renderFrameId !== null) {
+    return;
+  }
+
+  editor.renderFrameId = requestAnimationFrame(() => {
+    const activeEditor = state.editor;
+    if (!activeEditor) {
+      return;
+    }
+    activeEditor.renderFrameId = null;
+    renderSourceEditor();
+  });
+}
+
+function setOperationBase(
+  editor: SourceEditorSession,
+  operationIndex: number,
+  base: SourceEditRenderStage,
+): void {
+  editor.operationBase = {
+    ...base,
+    operationIndex,
+  };
+}
+
+function ensureRotateOperation(editor: SourceEditorSession): void {
+  const lastIndex = editor.editState.operations.length - 1;
+  const lastOperation = editor.editState.operations[lastIndex];
+  if (lastOperation?.kind === "rotateFree") {
+    editor.activeRotateIndex = lastIndex;
+    cacheOperationBase(editor, lastIndex);
+    return;
+  }
+
+  const base = renderEditedSourceStage(
+    editor.original,
+    editor.editState,
+    editor.editState.operations.length,
+  );
+  editor.editState.operations.push({ kind: "rotateFree", degrees: 0 });
+  editor.activeRotateIndex = editor.editState.operations.length - 1;
+  setOperationBase(editor, editor.activeRotateIndex, base);
+}
+
+function renderSourceEditor(): void {
+  const editor = state.editor;
+  if (!editor) {
+    return;
+  }
+
+  if (editor.renderFrameId != null) {
+    cancelAnimationFrame(editor.renderFrameId);
+    editor.renderFrameId = null;
+  }
+
+  editor.metrics = drawEditorPreview(
+    sourceEditorCanvas,
+    editor.original,
+    editor.editState,
+    editor.mode,
+    editor.activeCropIndex,
+    editor.activeRotateIndex,
+    editor.operationBase,
+  );
+  syncSourceEditorControls(editor);
+}
+
+function syncSourceEditorControls(editor: SourceEditorSession): void {
+  getElement<HTMLButtonElement>("crop-mode").classList.toggle("active", editor.mode === "crop");
+  getElement<HTMLButtonElement>("rotate-mode").classList.toggle("active", editor.mode === "rotate");
+
+  const cropExpand = getElement<HTMLInputElement>("crop-expand");
+  const cropOperation =
+    editor.activeCropIndex === null ? null : editor.editState.operations[editor.activeCropIndex];
+  cropExpand.disabled = cropOperation?.kind !== "crop";
+  cropExpand.checked = cropOperation?.kind === "crop" ? cropOperation.expand : false;
+
+  const rotateOperation =
+    editor.activeRotateIndex === null
+      ? null
+      : editor.editState.operations[editor.activeRotateIndex];
+  getElement<HTMLSpanElement>("source-editor-angle").textContent =
+    rotateOperation?.kind === "rotateFree" ? `${Math.round(rotateOperation.degrees)} deg` : "0 deg";
+}
+
+function syncEditSourceButton(): void {
+  getElement<HTMLButtonElement>("edit-source").disabled =
+    Boolean(state.editor) || !state.sourceOriginal || !state.sourceEdit;
+}
+
+function handleEditorPointerDown(event: PointerEvent): void {
+  const editor = state.editor;
+  if (!editor?.metrics) {
+    return;
+  }
+
+  const point = canvasPointToWorld(event, sourceEditorCanvas, editor.metrics);
+  if (editor.mode === "crop" && editor.activeCropIndex !== null) {
+    const operation = editor.editState.operations[editor.activeCropIndex];
+    if (operation?.kind !== "crop") {
+      return;
+    }
+
+    normalizeActiveCrop(editor);
+    const handle = cropHandleAtPoint(point, operation, editor.metrics);
+    const startCrop =
+      handle === null
+        ? { ...operation, x: point.x, y: point.y, width: MIN_CROP_SIZE, height: MIN_CROP_SIZE }
+        : { ...operation };
+    if (handle === null) {
+      Object.assign(operation, startCrop);
+    }
+    editor.pointer = {
+      kind: "crop",
+      pointerId: event.pointerId,
+      handle: handle ?? "se",
+      startPoint: point,
+      startCrop,
+    };
+    sourceEditorCanvas.setPointerCapture(event.pointerId);
+    renderSourceEditor();
+    return;
+  }
+
+  if (editor.mode === "rotate") {
+    ensureRotateOperation(editor);
+    const active = editor.activeRotateIndex;
+    const operation = active === null ? null : editor.editState.operations[active];
+    if (operation?.kind !== "rotateFree") {
+      return;
+    }
+
+    const center = outputCenterFromMetrics(editor.metrics);
+    editor.pointer = {
+      kind: "rotate",
+      pointerId: event.pointerId,
+      center,
+      startAngle: pointAngleDegrees(point, center),
+      startDegrees: operation.degrees,
+    };
+    sourceEditorCanvas.setPointerCapture(event.pointerId);
+  }
+}
+
+function handleEditorPointerMove(event: PointerEvent): void {
+  const editor = state.editor;
+  if (!editor?.pointer || editor.pointer.pointerId !== event.pointerId || !editor.metrics) {
+    return;
+  }
+
+  const point = canvasPointToWorld(event, sourceEditorCanvas, editor.metrics);
+  if (editor.pointer.kind === "crop") {
+    updateCropFromPointer(editor, point);
+    scheduleSourceEditorRender();
+    return;
+  }
+
+  const active = editor.activeRotateIndex;
+  const operation = active === null ? null : editor.editState.operations[active];
+  if (operation?.kind !== "rotateFree") {
+    return;
+  }
+
+  const currentAngle = pointAngleDegrees(point, editor.pointer.center);
+  operation.degrees =
+    editor.pointer.startDegrees + normalizeAngle(currentAngle - editor.pointer.startAngle);
+  scheduleSourceEditorRender();
+}
+
+function handleEditorPointerEnd(event: PointerEvent): void {
+  const editor = state.editor;
+  if (!editor?.pointer || editor.pointer.pointerId !== event.pointerId) {
+    return;
+  }
+
+  editor.pointer = null;
+  if (sourceEditorCanvas.hasPointerCapture(event.pointerId)) {
+    sourceEditorCanvas.releasePointerCapture(event.pointerId);
+  }
+}
+
+function normalizeActiveCrop(editor: SourceEditorSession): void {
+  if (editor.activeCropIndex === null) {
+    return;
+  }
+
+  const operation = editor.editState.operations[editor.activeCropIndex];
+  if (operation?.kind !== "crop") {
+    return;
+  }
+
+  const base = currentCropBaseDimensions(editor);
+  Object.assign(
+    operation,
+    normalizeCrop(operation, {
+      x: 0,
+      y: 0,
+      width: base.width,
+      height: base.height,
+    }),
+  );
+}
+
+function updateCropFromPointer(editor: SourceEditorSession, point: Point): void {
+  if (editor.activeCropIndex === null || editor.pointer?.kind !== "crop") {
+    return;
+  }
+
+  const operation = editor.editState.operations[editor.activeCropIndex];
+  if (operation?.kind !== "crop") {
+    return;
+  }
+
+  const pointer = editor.pointer;
+  const dx = point.x - pointer.startPoint.x;
+  const dy = point.y - pointer.startPoint.y;
+  const next = resizedCrop(pointer.startCrop, pointer.handle, dx, dy);
+  const base = currentCropBaseDimensions(editor);
+  Object.assign(
+    operation,
+    normalizeCrop(next, {
+      x: 0,
+      y: 0,
+      width: base.width,
+      height: base.height,
+    }),
+  );
+}
+
+function resizedCrop(
+  crop: CropEditOperation,
+  handle: CropHandle,
+  dx: number,
+  dy: number,
+): CropEditOperation {
+  let left = crop.x;
+  let top = crop.y;
+  let right = crop.x + crop.width;
+  let bottom = crop.y + crop.height;
+
+  if (handle === "move") {
+    left += dx;
+    right += dx;
+    top += dy;
+    bottom += dy;
+  } else {
+    if (handle.includes("w")) {
+      left += dx;
+    }
+    if (handle.includes("e")) {
+      right += dx;
+    }
+    if (handle.includes("n")) {
+      top += dy;
+    }
+    if (handle.includes("s")) {
+      bottom += dy;
+    }
+  }
+
+  if (right - left < MIN_CROP_SIZE) {
+    if (handle.includes("w")) {
+      left = right - MIN_CROP_SIZE;
+    } else {
+      right = left + MIN_CROP_SIZE;
+    }
+  }
+  if (bottom - top < MIN_CROP_SIZE) {
+    if (handle.includes("n")) {
+      top = bottom - MIN_CROP_SIZE;
+    } else {
+      bottom = top + MIN_CROP_SIZE;
+    }
+  }
+
+  return {
+    ...crop,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+function cropHandleAtPoint(
+  point: Point,
+  crop: CropEditOperation,
+  metrics: EditorRenderMetrics,
+): CropHandle | null {
+  const tolerance = 14 / metrics.scale;
+  const left = crop.x;
+  const top = crop.y;
+  const right = crop.x + crop.width;
+  const bottom = crop.y + crop.height;
+  const nearLeft = Math.abs(point.x - left) <= tolerance;
+  const nearRight = Math.abs(point.x - right) <= tolerance;
+  const nearTop = Math.abs(point.y - top) <= tolerance;
+  const nearBottom = Math.abs(point.y - bottom) <= tolerance;
+  const insideX = point.x >= left - tolerance && point.x <= right + tolerance;
+  const insideY = point.y >= top - tolerance && point.y <= bottom + tolerance;
+
+  if (nearLeft && nearTop) {
+    return "nw";
+  }
+  if (nearRight && nearTop) {
+    return "ne";
+  }
+  if (nearLeft && nearBottom) {
+    return "sw";
+  }
+  if (nearRight && nearBottom) {
+    return "se";
+  }
+  if (nearLeft && insideY) {
+    return "w";
+  }
+  if (nearRight && insideY) {
+    return "e";
+  }
+  if (nearTop && insideX) {
+    return "n";
+  }
+  if (nearBottom && insideX) {
+    return "s";
+  }
+  if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+    return "move";
+  }
+  return null;
+}
+
+function normalizeAngle(degrees: number): number {
+  let normalized = degrees;
+  while (normalized > 180) {
+    normalized -= 360;
+  }
+  while (normalized < -180) {
+    normalized += 360;
+  }
+  return normalized;
 }
 
 function renderGlyphPacks(): void {
@@ -586,6 +1283,7 @@ function syncUiFromState(): void {
   getElement<HTMLSelectElement>("grid-mode").value = state.settings.gridMode;
   syncColorModeButtons();
   syncGridMode();
+  syncEditSourceButton();
   updateStats();
 }
 
@@ -608,14 +1306,24 @@ function syncColorModeButtons(): void {
 }
 
 async function generate(): Promise<void> {
+  if (state.editor) {
+    setStatus("Confirm or cancel source edits before generating");
+    return;
+  }
+
   if (state.isGenerating) {
-    setStatus("Generation is already running; changed settings will need a new pass");
+    state.pendingGenerateAfterCurrent = true;
+    setStatus("Generation is already running; queued another pass");
     return;
   }
 
   if (!state.source) {
-    state.source = createSampleImage();
+    const sample = createSampleImage();
+    state.source = sample;
+    state.sourceOriginal = sample;
+    state.sourceEdit = createDefaultSourceEditState();
     state.sourceName = "sample-gradient";
+    syncEditSourceButton();
   }
 
   const sourceSnapshot = state.source;
@@ -666,7 +1374,11 @@ async function generate(): Promise<void> {
     setStatus(error instanceof Error ? error.message : "Generation failed");
   } finally {
     state.isGenerating = false;
-    getElement<HTMLButtonElement>("generate-button").disabled = false;
+    getElement<HTMLButtonElement>("generate-button").disabled = Boolean(state.editor);
+    if (state.pendingGenerateAfterCurrent && !state.editor) {
+      state.pendingGenerateAfterCurrent = false;
+      void generate();
+    }
   }
 }
 

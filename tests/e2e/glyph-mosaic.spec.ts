@@ -12,6 +12,10 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
     ),
   });
 
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeDisabled();
+  await expect(page.locator("#status")).toContainText("Confirm source edits");
+  await page.getByRole("button", { name: "Confirm" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   await expect(page.locator("#candidate-count")).toContainText("renderable");
   await expect(page.locator("#cell-count")).not.toContainText("Cells: 0");
@@ -63,6 +67,54 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
       expect(pdf).toContain("/Type /Page");
     }
   }
+});
+
+test("edits uploaded sources before generation and can reopen edit parameters", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "editable.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAgklEQVR4nO3ZwQnAIBAFwYz779l2UBG8BKUIgeA2EJh99p5hMElvG8/rCwD8kUBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQOB1rfu+p6PrnYvLWlQdVx9bMwcC5JOTmXMhICAAAAAAAAAAAAB4Gg+KOQdKPkSrjAAAAABJRU5ErkJggg==",
+      "base64",
+    ),
+  });
+
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeDisabled();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await page.getByLabel("Expand crop").check();
+  await dragEditorCanvas(page, 0.16, 0.18, 0.72, 0.74);
+
+  await page.getByRole("button", { name: "Rotate", exact: true }).click();
+  await dragEditorCanvas(page, 0.78, 0.52, 0.52, 0.2);
+  await expect(page.locator("#source-editor-angle")).not.toHaveText("0 deg");
+
+  await page.getByRole("button", { name: "CW 90", exact: true }).click();
+  await page.getByRole("button", { name: "Flip H", exact: true }).click();
+  await page.getByRole("button", { name: "Reset rotate" }).click();
+  await expect(page.locator("#source-editor-angle")).toHaveText("0 deg");
+
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeDisabled();
+  await page.getByRole("button", { name: "Reset flip" }).click();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await expect(page.getByLabel("Expand crop")).toBeChecked();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 });
 
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
@@ -193,6 +245,25 @@ async function statNumber(page: Page, selector: string): Promise<number> {
   const text = await page.locator(selector).textContent();
   const match = text?.match(/\d[\d,]*/);
   return Number(match?.[0].replaceAll(",", "") ?? 0);
+}
+
+async function dragEditorCanvas(
+  page: Page,
+  startXRatio: number,
+  startYRatio: number,
+  endXRatio: number,
+  endYRatio: number,
+): Promise<void> {
+  const box = await page.locator("#source-editor-canvas").boundingBox();
+  expect(box).not.toBeNull();
+  const startX = box!.x + box!.width * startXRatio;
+  const startY = box!.y + box!.height * startYRatio;
+  const endX = box!.x + box!.width * endXRatio;
+  const endY = box!.y + box!.height * endYRatio;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.up();
 }
 
 function pngDimensions(buffer: Buffer): { width: number; height: number } {
