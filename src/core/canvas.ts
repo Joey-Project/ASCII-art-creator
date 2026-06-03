@@ -1,5 +1,8 @@
 import type { Mosaic, MosaicCell, RenderSettings } from "../domain/types";
 
+export const PREVIEW_PLACEHOLDER_WIDTH = 900;
+export const PREVIEW_PLACEHOLDER_HEIGHT = 540;
+
 export function cssFontFamily(family: string): string {
   const generic = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"]);
   return generic.has(family) ? family : JSON.stringify(family);
@@ -77,23 +80,29 @@ export function applySettingsToPreviewCanvas(
   canvas: HTMLCanvasElement,
   mosaic: Mosaic | null,
   settings: RenderSettings,
+  scale = 1,
 ): void {
   if (!mosaic) {
-    canvas.width = 900;
-    canvas.height = 540;
+    canvas.width = Math.max(1, Math.round(PREVIEW_PLACEHOLDER_WIDTH * scale));
+    canvas.height = Math.max(1, Math.round(PREVIEW_PLACEHOLDER_HEIGHT * scale));
     const context = canvas.getContext("2d");
     if (!context) {
       return;
     }
+    context.scale(scale, scale);
     context.fillStyle = settings.background;
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillRect(0, 0, PREVIEW_PLACEHOLDER_WIDTH, PREVIEW_PLACEHOLDER_HEIGHT);
     context.fillStyle = "#5f6669";
     context.font = "600 22px system-ui, sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText("Upload an image or load the sample to generate a mosaic", 450, 270);
+    context.fillText(
+      "Upload an image or load the sample to generate a mosaic",
+      PREVIEW_PLACEHOLDER_WIDTH / 2,
+      PREVIEW_PLACEHOLDER_HEIGHT / 2,
+    );
     return;
   }
 
-  drawMosaicToCanvas(canvas, mosaic, 1);
+  drawMosaicToCanvas(canvas, mosaic, scale);
 }

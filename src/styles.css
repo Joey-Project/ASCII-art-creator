@@ -56,6 +56,7 @@ button:disabled {
 .shell {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  height: 100vh;
   min-height: 100vh;
 }
 
@@ -68,7 +69,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: 100vh;
+  min-height: 0;
   overflow: auto;
   padding: 20px;
 }
@@ -270,7 +271,7 @@ input[type="file"] {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
   padding: 20px;
   gap: 16px;
 }
@@ -284,11 +285,43 @@ input[type="file"] {
   flex-wrap: wrap;
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.zoom-controls {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid #a9b4b1;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.zoom-controls button {
+  min-width: 38px;
+  border: 0;
+  border-right: 1px solid #d5dcda;
+  border-radius: 0;
+  background: #ffffff;
+  color: #22292b;
+  padding: 0 10px;
+}
+
+.zoom-controls button:last-child {
+  border-right: 0;
+}
+
 #status {
   color: #4f5b5e;
 }
 
 .preview-frame {
+  display: grid;
+  align-items: safe center;
+  justify-items: safe center;
   min-height: 0;
   overflow: auto;
   border: 1px solid #c6d0cd;
@@ -308,9 +341,8 @@ input[type="file"] {
 
 #preview-canvas {
   display: block;
-  width: max-content;
+  width: auto;
   max-width: none;
-  min-width: 100%;
   height: auto;
 }
 
@@ -322,10 +354,11 @@ input[type="file"] {
 @media (max-width: 920px) {
   .shell {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .controls {
-    max-height: none;
+    overflow: visible;
     border-right: 0;
     border-bottom: 1px solid #cfd7d4;
   }
