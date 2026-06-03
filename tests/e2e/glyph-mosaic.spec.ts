@@ -143,9 +143,15 @@ test("filters fonts with fuzzy and exact search and labels font weights", async 
 
   await page.getByLabel("Search fonts").fill("msp");
   await expect(page.getByText("Monospace")).toBeVisible();
+  await expect(page.locator("#font-scan-hint")).toContainText(
+    "2 selected fonts are hidden by search and still included in generation.",
+  );
 
   await page.getByLabel("Exact text match").check();
   await expect(page.getByText("No fonts match this search.")).toBeVisible();
+  await expect(page.locator("#font-scan-hint")).toContainText(
+    "3 selected fonts are hidden by search and still included in generation.",
+  );
 
   await page.getByLabel("Search fonts").fill("mono");
   await expect(page.getByText("Monospace")).toBeVisible();

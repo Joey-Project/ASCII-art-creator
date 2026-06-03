@@ -537,8 +537,15 @@ function renderFontList(): void {
   const scanButton = getElement<HTMLButtonElement>("scan-fonts");
   scanButton.disabled = !access.available;
   scanButton.title = access.reason;
+  const hiddenSelectedCount = state.fonts.filter(
+    (font) => font.selected && !fontMatchesSearch(font, state.fontSearch, state.fontExactMatch),
+  ).length;
+  const hiddenSelectedText =
+    hiddenSelectedCount > 0
+      ? ` ${hiddenSelectedCount.toLocaleString()} selected ${hiddenSelectedCount === 1 ? "font is" : "fonts are"} hidden by search and still included in generation.`
+      : "";
   getElement<HTMLParagraphElement>("font-scan-hint").textContent =
-    `${access.reason} Showing ${matchingFonts.length.toLocaleString()} of ${state.fonts.length.toLocaleString()} fonts.`;
+    `${access.reason} Showing ${matchingFonts.length.toLocaleString()} of ${state.fonts.length.toLocaleString()} fonts.${hiddenSelectedText}`;
   updateStats();
 }
 
