@@ -81,6 +81,8 @@ test("contains the desktop preview by default and supports preview zoom controls
   expect(canvas).not.toBeNull();
   expect(canvas!.width).toBeLessThanOrEqual(frame!.width + 1);
   expect(canvas!.height).toBeLessThanOrEqual(frame!.height + 1);
+  await expect(page.locator(".preview-frame")).toHaveCSS("background-color", "rgb(251, 252, 251)");
+  await expect(page.locator("#preview-canvas")).toHaveCSS("border-top-width", "1px");
 
   const controls = await page.locator(".controls").boundingBox();
   const workspace = await page.locator(".workspace").boundingBox();

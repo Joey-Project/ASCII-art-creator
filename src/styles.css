@@ -326,6 +326,16 @@ input[type="file"] {
   overflow: auto;
   border: 1px solid #c6d0cd;
   border-radius: 8px;
+  background: #fbfcfb;
+  padding: 12px;
+}
+
+#preview-canvas {
+  display: block;
+  width: auto;
+  max-width: none;
+  height: auto;
+  border: 1px solid #aeb9b6;
   background:
     linear-gradient(45deg, #d9dfdd 25%, transparent 25%),
     linear-gradient(-45deg, #d9dfdd 25%, transparent 25%),
@@ -337,13 +347,6 @@ input[type="file"] {
     8px -8px,
     -8px 0;
   background-size: 16px 16px;
-}
-
-#preview-canvas {
-  display: block;
-  width: auto;
-  max-width: none;
-  height: auto;
 }
 
 .stats {

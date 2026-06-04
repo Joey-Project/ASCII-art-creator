@@ -764,13 +764,30 @@ function currentPreviewScale(): number {
 }
 
 function containPreviewScale(naturalSize: { width: number; height: number }): number {
-  const frameWidth = previewFrame.clientWidth;
-  const frameHeight = previewFrame.clientHeight;
+  const frameStyle = window.getComputedStyle(previewFrame);
+  const canvasStyle = window.getComputedStyle(previewCanvas);
+  const horizontalInset =
+    cssPixels(frameStyle.paddingLeft) +
+    cssPixels(frameStyle.paddingRight) +
+    cssPixels(canvasStyle.borderLeftWidth) +
+    cssPixels(canvasStyle.borderRightWidth);
+  const verticalInset =
+    cssPixels(frameStyle.paddingTop) +
+    cssPixels(frameStyle.paddingBottom) +
+    cssPixels(canvasStyle.borderTopWidth) +
+    cssPixels(canvasStyle.borderBottomWidth);
+  const frameWidth = previewFrame.clientWidth - horizontalInset;
+  const frameHeight = previewFrame.clientHeight - verticalInset;
   if (frameWidth <= 0 || frameHeight <= 0) {
     return 1;
   }
 
   return Math.min(1, frameWidth / naturalSize.width, frameHeight / naturalSize.height);
+}
+
+function cssPixels(value: string): number {
+  const pixels = Number.parseFloat(value);
+  return Number.isFinite(pixels) ? pixels : 0;
 }
 
 function previewNaturalSize(): { width: number; height: number } {
