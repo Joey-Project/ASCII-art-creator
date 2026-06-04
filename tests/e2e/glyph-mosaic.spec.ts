@@ -21,9 +21,14 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
   await expect(page.locator("#cell-count")).not.toContainText("Cells: 0");
   await page.locator("#background").fill("#123456");
 
+  const previewFrame = await page.locator(".preview-frame").boundingBox();
   const box = await page.locator("#preview-canvas").boundingBox();
-  expect(box?.width).toBeGreaterThan(300);
-  expect(box?.height).toBeGreaterThan(200);
+  expect(previewFrame).not.toBeNull();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(100);
+  expect(box!.height).toBeGreaterThan(80);
+  expect(box!.width).toBeLessThanOrEqual(previewFrame!.width + 1);
+  expect(box!.height).toBeLessThanOrEqual(previewFrame!.height + 1);
 
   for (const format of ["TXT", "SVG", "PNG", "JPEG", "PDF"]) {
     const download = await Promise.all([
@@ -123,6 +128,31 @@ test("edits uploaded sources before generation and can reopen edit parameters", 
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 });
 
+test("applies confirmed source crops to downstream generation", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Grid mode").selectOption("source-pixels");
+  await page.locator("#source-pixels").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "4";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#image-input").setInputFiles({
+    name: "cropped-source.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await dragEditorCanvas(page, 0.98, 0.98, 0.55, 0.55);
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const editedCellCount = await statNumber(page, "#cell-count");
+  expect(editedCellCount).toBeGreaterThan(0);
+  expect(editedCellCount).toBeLessThan(192);
+});
+
 test("ignores stale uploads when another source is loaded first", async ({ page }) => {
   await delayFirstBlobImageLoad(page);
 
@@ -133,6 +163,24 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
     buffer: fixturePngBuffer(),
   });
   await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.waitForTimeout(700);
+
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#source-name")).toContainText("sample-gradient");
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+});
+
+test("ignores stale uploads when generate falls back to the sample", async ({ page }) => {
+  await delayFirstBlobImageLoad(page);
+
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "slow-generate-upload.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   await page.waitForTimeout(700);
 

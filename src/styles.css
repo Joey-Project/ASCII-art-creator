@@ -383,7 +383,10 @@ input[type="file"] {
 }
 
 .editor-frame {
+  display: grid;
+  place-items: safe center;
   min-height: 0;
+  max-height: min(52vh, 620px);
   overflow: auto;
   border: 1px solid #c6d0cd;
   border-radius: 8px;
@@ -402,8 +405,9 @@ input[type="file"] {
 
 #source-editor-canvas {
   display: block;
-  max-width: none;
-  min-width: 100%;
+  width: auto;
+  max-width: 100%;
+  max-height: min(52vh, 620px);
   height: auto;
   touch-action: none;
   cursor: crosshair;

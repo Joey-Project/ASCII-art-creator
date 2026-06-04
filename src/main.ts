@@ -1472,6 +1472,7 @@ async function generate(): Promise<void> {
   }
 
   if (!state.source) {
+    nextImageLoadToken();
     const sample = createSampleImage();
     state.source = sample;
     state.sourceOriginal = sample;

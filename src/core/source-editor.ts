@@ -848,7 +848,7 @@ function fitWorldToPreview(
 ): EditorRenderMetrics & { canvasWidth: number; canvasHeight: number } {
   const maximumWidth = 960;
   const maximumHeight = 620;
-  const scale = Math.min(maximumWidth / Math.max(1, width), maximumHeight / Math.max(1, height), 1);
+  const scale = Math.min(maximumWidth / Math.max(1, width), maximumHeight / Math.max(1, height));
   return {
     scale,
     worldX: 0,
