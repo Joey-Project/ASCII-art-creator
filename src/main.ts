@@ -10,7 +10,12 @@ import type {
 import { GLYPH_PACKS } from "./domain/glyph-packs";
 import { combineGlyphSources } from "./core/graphemes";
 import { generateMosaic, recommendGridForImage } from "./core/generator";
-import { applySettingsToPreviewCanvas, cssFontFamily } from "./core/canvas";
+import {
+  PREVIEW_PLACEHOLDER_HEIGHT,
+  PREVIEW_PLACEHOLDER_WIDTH,
+  applySettingsToPreviewCanvas,
+  cssFontFamily,
+} from "./core/canvas";
 import { colorFromString } from "./core/colors";
 import { createSampleImage, loadImageFromFile } from "./core/source-image";
 import {
@@ -63,6 +68,13 @@ const DEFAULT_SETTINGS: RenderSettings = {
   densityWindow: 10,
 };
 
+const DEFAULT_PREVIEW_ZOOM_MULTIPLIER = 1;
+const MIN_PREVIEW_ZOOM_MULTIPLIER = 0.5;
+const MAX_PREVIEW_ZOOM_MULTIPLIER = 3;
+const PREVIEW_ZOOM_STEP = 1.2;
+const MIN_PREVIEW_RENDER_SCALE = 0.05;
+const MAX_PREVIEW_RENDER_PIXELS = 12_000_000;
+
 interface AppState {
   settings: RenderSettings;
   fonts: FontChoice[];
@@ -80,6 +92,7 @@ interface AppState {
   needsRegenerate: boolean;
   generationVersion: number;
   editor: SourceEditorSession | null;
+  previewZoomMultiplier: number;
 }
 
 type CropHandle = "move" | "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
@@ -130,6 +143,7 @@ const state: AppState = {
   needsRegenerate: false,
   generationVersion: 0,
   editor: null,
+  previewZoomMultiplier: DEFAULT_PREVIEW_ZOOM_MULTIPLIER,
 };
 
 let imageLoadToken = 0;
@@ -296,7 +310,14 @@ app.innerHTML = `
     <section class="workspace">
       <div class="toolbar">
         <div class="toolbar-main">
-          <button id="generate-button" type="button">Generate mosaic</button>
+          <div class="toolbar-actions">
+            <button id="generate-button" type="button">Generate mosaic</button>
+            <div class="zoom-controls" aria-label="Preview zoom controls">
+              <button id="zoom-in" class="secondary" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+              <button id="zoom-fit" class="secondary" type="button" title="Fit preview" aria-label="Fit preview">Fit</button>
+              <button id="zoom-out" class="secondary" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+            </div>
+          </div>
           <div id="status" role="status" aria-live="polite">Ready</div>
         </div>
         <div id="source-editor-actions" class="source-editor-actions" hidden>
@@ -327,7 +348,7 @@ app.innerHTML = `
           <canvas id="source-editor-canvas" aria-label="Source edit preview"></canvas>
         </div>
       </section>
-      <div class="preview-frame">
+      <div id="preview-frame" class="preview-frame">
         <canvas id="preview-canvas" aria-label="Mosaic preview"></canvas>
       </div>
       <div class="stats">
@@ -341,12 +362,14 @@ app.innerHTML = `
 
 const previewCanvas = getElement<HTMLCanvasElement>("preview-canvas");
 const sourceEditorCanvas = getElement<HTMLCanvasElement>("source-editor-canvas");
+const previewFrame = getElement<HTMLDivElement>("preview-frame");
 const status = getElement<HTMLDivElement>("status");
 const candidateCount = getElement<HTMLSpanElement>("candidate-count");
 const cellCount = getElement<HTMLSpanElement>("cell-count");
 const sourceName = getElement<HTMLSpanElement>("source-name");
 
 bindControls();
+bindPreviewSizing();
 renderGlyphPacks();
 renderFontList();
 syncUiFromState();
@@ -633,6 +656,28 @@ function bindControls(): void {
   sourceEditorCanvas.addEventListener("pointermove", handleEditorPointerMove);
   sourceEditorCanvas.addEventListener("pointerup", handleEditorPointerEnd);
   sourceEditorCanvas.addEventListener("pointercancel", handleEditorPointerEnd);
+
+  getElement<HTMLButtonElement>("zoom-in").addEventListener("click", () => {
+    zoomPreviewBy(PREVIEW_ZOOM_STEP);
+  });
+  getElement<HTMLButtonElement>("zoom-out").addEventListener("click", () => {
+    zoomPreviewBy(1 / PREVIEW_ZOOM_STEP);
+  });
+  getElement<HTMLButtonElement>("zoom-fit").addEventListener("click", () => {
+    resetPreviewZoom();
+  });
+  previewFrame.addEventListener(
+    "wheel",
+    (event) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      event.preventDefault();
+      zoomPreviewBy(event.deltaY < 0 ? PREVIEW_ZOOM_STEP : 1 / PREVIEW_ZOOM_STEP);
+    },
+    { passive: false },
+  );
 
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-export]")) {
     button.addEventListener("click", async () => {
@@ -1267,6 +1312,13 @@ function normalizeAngle(degrees: number): number {
   return normalized;
 }
 
+function bindPreviewSizing(): void {
+  const resizeObserver = new ResizeObserver(() => {
+    drawPreview();
+  });
+  resizeObserver.observe(previewFrame);
+}
+
 function renderGlyphPacks(): void {
   const container = getElement<HTMLDivElement>("glyph-packs");
   container.innerHTML = "";
@@ -1468,6 +1520,7 @@ async function generate(): Promise<void> {
 
     state.mosaic = mosaic;
     state.needsRegenerate = false;
+    resetPreviewZoom({ draw: false });
     syncMosaicVisualSettings(state.mosaic, state.settings);
     drawPreview();
     updateStats();
@@ -1499,7 +1552,80 @@ function selectedWeights(): number[] {
 }
 
 function drawPreview(): void {
-  applySettingsToPreviewCanvas(previewCanvas, state.mosaic, state.settings);
+  applySettingsToPreviewCanvas(previewCanvas, state.mosaic, state.settings, currentPreviewScale());
+  syncPreviewZoomControls();
+}
+
+function zoomPreviewBy(factor: number): void {
+  state.previewZoomMultiplier = clampPreviewZoomMultiplier(state.previewZoomMultiplier * factor);
+  drawPreview();
+}
+
+function resetPreviewZoom(options: { draw?: boolean } = {}): void {
+  state.previewZoomMultiplier = DEFAULT_PREVIEW_ZOOM_MULTIPLIER;
+  if (options.draw !== false) {
+    drawPreview();
+  }
+}
+
+function currentPreviewScale(): number {
+  const naturalSize = previewNaturalSize();
+  const rawScale = containPreviewScale(naturalSize) * state.previewZoomMultiplier;
+  const pixelCappedScale = Math.sqrt(
+    MAX_PREVIEW_RENDER_PIXELS / Math.max(1, naturalSize.width * naturalSize.height),
+  );
+  return Math.max(MIN_PREVIEW_RENDER_SCALE, Math.min(rawScale, pixelCappedScale));
+}
+
+function containPreviewScale(naturalSize: { width: number; height: number }): number {
+  const frameStyle = window.getComputedStyle(previewFrame);
+  const canvasStyle = window.getComputedStyle(previewCanvas);
+  const horizontalInset =
+    cssPixels(frameStyle.paddingLeft) +
+    cssPixels(frameStyle.paddingRight) +
+    cssPixels(canvasStyle.borderLeftWidth) +
+    cssPixels(canvasStyle.borderRightWidth);
+  const verticalInset =
+    cssPixels(frameStyle.paddingTop) +
+    cssPixels(frameStyle.paddingBottom) +
+    cssPixels(canvasStyle.borderTopWidth) +
+    cssPixels(canvasStyle.borderBottomWidth);
+  const frameWidth = previewFrame.clientWidth - horizontalInset;
+  const frameHeight = previewFrame.clientHeight - verticalInset;
+  if (frameWidth <= 0 || frameHeight <= 0) {
+    return 1;
+  }
+
+  return Math.min(1, frameWidth / naturalSize.width, frameHeight / naturalSize.height);
+}
+
+function cssPixels(value: string): number {
+  const pixels = Number.parseFloat(value);
+  return Number.isFinite(pixels) ? pixels : 0;
+}
+
+function previewNaturalSize(): { width: number; height: number } {
+  if (!state.mosaic) {
+    return { width: PREVIEW_PLACEHOLDER_WIDTH, height: PREVIEW_PLACEHOLDER_HEIGHT };
+  }
+
+  return {
+    width: Math.max(1, state.mosaic.columns * state.mosaic.cellWidth),
+    height: Math.max(1, state.mosaic.rows * state.mosaic.cellHeight),
+  };
+}
+
+function syncPreviewZoomControls(): void {
+  const percent = Math.round(currentPreviewScale() * 100);
+  getElement<HTMLButtonElement>("zoom-fit").title = `Fit preview (${percent}%)`;
+  getElement<HTMLButtonElement>("zoom-out").disabled =
+    state.previewZoomMultiplier <= MIN_PREVIEW_ZOOM_MULTIPLIER;
+  getElement<HTMLButtonElement>("zoom-in").disabled =
+    state.previewZoomMultiplier >= MAX_PREVIEW_ZOOM_MULTIPLIER;
+}
+
+function clampPreviewZoomMultiplier(value: number): number {
+  return Math.max(MIN_PREVIEW_ZOOM_MULTIPLIER, Math.min(MAX_PREVIEW_ZOOM_MULTIPLIER, value));
 }
 
 function applyVisualSettingsToMosaic(): void {
