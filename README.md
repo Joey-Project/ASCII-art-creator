@@ -6,7 +6,8 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 
 ## 核心能力
 
-- 上传图片后在浏览器本地生成 glyph mosaic。
+- 上传图片后先在浏览器本地确认 source edit, 再生成 glyph mosaic。
+- Source edit 支持 crop, 90 度旋转, 无级旋转, horizontal/vertical flip, reset all 和按功能 reset。
 - 默认只启用 ASCII 候选字符, 保持首屏性能和输出可预测。
 - 非 ASCII 字形只在用户输入字符或显式启用 glyph pack 后进入候选库, 可覆盖汉字、日文假名、数学符号、emoji、音乐符号等可渲染 glyph。
 - 支持按 cell 级别混排 `glyph + font + weight`, 不依赖浏览器排版引擎做整段多字体流排。
@@ -17,12 +18,22 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 
 ## 使用模型
 
-1. 选择或上传图片。
-2. 调整网格设置: 使用推荐行列数, 手动设置行/列, 或按像素步长生成 cell。
-3. 选择 glyph 候选来源。默认 ASCII; 需要多语言或符号时, 输入字符或显式启用对应 glyph pack。User glyphs 会追加到已勾选 packs; 如果只想使用输入框里的字符, 需要取消勾选 ASCII 和其他 packs。
-4. 选择字体来源和字重。默认字体可直接使用, 上传字体和本机字体扫描作为增强能力。字体多时可以用搜索框筛选, 默认 fuzzy match, 也可以切到 exact text match。
-5. 选择单色或彩色策略, 可启用边缘方向、局部对比度、形状匹配和 dithering 等质量选项。
-6. 预览结果并导出目标格式。
+1. 选择或上传图片。上传图会先进入编辑确认步骤; `Load sample` 会直接生成, 但之后也可以用 `Edit source` 回到编辑器。
+2. 在 source editor 顶部两行按钮中按需要 crop, rotate, flip。第一行是编辑操作和确认/取消, 第二行是对应 reset。Crop 模式有辅助线和暗化 overlay; `Expand crop` 允许裁剪框超出图像并用透明 padding 补齐。
+3. 点 `Confirm` 后, 编辑结果会作为下游 source cache, 并按编辑后的尺寸推荐行列数。
+4. 调整网格设置: 使用推荐行列数, 手动设置行/列, 或按像素步长生成 cell。
+5. 选择 glyph 候选来源。默认 ASCII; 需要多语言或符号时, 输入字符或显式启用对应 glyph pack。User glyphs 会追加到已勾选 packs; 如果只想使用输入框里的字符, 需要取消勾选 ASCII 和其他 packs。
+6. 选择字体来源和字重。默认字体可直接使用, 上传字体和本机字体扫描作为增强能力。字体多时可以用搜索框筛选, 默认 fuzzy match, 也可以切到 exact text match。
+7. 选择单色或彩色策略, 可启用边缘方向、局部对比度、形状匹配和 dithering 等质量选项。
+8. 预览结果并导出目标格式。
+
+## Source edit 语义
+
+编辑器保留原图和一组按用户操作顺序 replay 的 edit stages。每次工具操作完成后都成为一个 stage; 如果尾部已经是同类 stage, 继续进入同一工具会编辑这个尾部 stage, 否则会追加新 stage。编辑器打开时会暂时锁住下游生成和重新打开 source editor, 避免未确认上传被旧 source 覆盖。90 度旋转和 flip 不重采样; 无级旋转使用 Canvas `imageSmoothingQuality = high` 的浏览器高质量重采样。无级旋转会先保留完整外接画布, 只有最终确认时才执行旋转造成的出框裁剪; 如果后续 crop 使用 expand, 可以把旋转后原本会被裁掉的区域重新纳入输出。
+
+如果没有任何 edit stage, `Confirm` 会保留原始上传图作为下游 source。实际进入编辑路径时, 工作 canvas 会限制在浏览器友好的尺寸预算内; 超大图片或过大的 expanded crop 会被限制到该预算, 以避免确认前就触发 canvas 内存或尺寸失败。拖拽 crop/rotate 时会缓存当前操作前的 replay stage, 并用 `requestAnimationFrame` 合并预览重绘, 避免每个 pointermove 都从原图重放所有操作。
+
+例如先 rotate 再 crop 时, crop stage 会建立在旋转后的图像空间里; 先 crop 再 rotate 再 crop 时, 第二个 crop 是新的后续 stage, 不会改写前一个 crop。按功能 reset 会保守处理坐标依赖: reset rotate 或 flip 时, 这些变换之后创建的 crop 会被一并丢弃, 避免把旧坐标系里的裁剪框错误套到新图像空间。
 
 ## 字体和隐私
 

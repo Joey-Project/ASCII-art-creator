@@ -12,14 +12,23 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
     ),
   });
 
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeDisabled();
+  await expect(page.locator("#status")).toContainText("Confirm source edits");
+  await page.getByRole("button", { name: "Confirm" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   await expect(page.locator("#candidate-count")).toContainText("renderable");
   await expect(page.locator("#cell-count")).not.toContainText("Cells: 0");
   await page.locator("#background").fill("#123456");
 
+  const previewFrame = await page.locator(".preview-frame").boundingBox();
   const box = await page.locator("#preview-canvas").boundingBox();
-  expect(box?.width).toBeGreaterThan(300);
-  expect(box?.height).toBeGreaterThan(200);
+  expect(previewFrame).not.toBeNull();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(100);
+  expect(box!.height).toBeGreaterThan(80);
+  expect(box!.width).toBeLessThanOrEqual(previewFrame!.width + 1);
+  expect(box!.height).toBeLessThanOrEqual(previewFrame!.height + 1);
 
   for (const format of ["TXT", "SVG", "PNG", "JPEG", "PDF"]) {
     const download = await Promise.all([
@@ -63,6 +72,213 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
       expect(pdf).toContain("/Type /Page");
     }
   }
+});
+
+test("edits uploaded sources before generation and can reopen edit parameters", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "editable.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAgklEQVR4nO3ZwQnAIBAFwYz779l2UBG8BKUIgeA2EJh99p5hMElvG8/rCwD8kUBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQOB1rfu+p6PrnYvLWlQdVx9bMwcC5JOTmXMhICAAAAAAAAAAAAB4Gg+KOQdKPkSrjAAAAABJRU5ErkJggg==",
+      "base64",
+    ),
+  });
+
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeDisabled();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await page.getByLabel("Expand crop").check();
+  await dragEditorCanvas(page, 0.16, 0.18, 0.72, 0.74);
+  await dragEditorCanvas(page, 0.78, 0.78, 0.24, 0.28);
+
+  await page.getByRole("button", { name: "Rotate", exact: true }).click();
+  await dragEditorCanvas(page, 0.78, 0.52, 0.52, 0.2);
+  await expect(page.locator("#source-editor-angle")).not.toHaveText("0 deg");
+
+  await page.getByRole("button", { name: "CW 90", exact: true }).click();
+  await page.getByRole("button", { name: "Flip H", exact: true }).click();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await expect(page.getByLabel("Expand crop")).not.toBeChecked();
+  await page.getByRole("button", { name: "Reset rotate" }).click();
+  await page.getByRole("button", { name: "Reset flip" }).click();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await expect(page.getByLabel("Expand crop")).toBeChecked();
+  await expect(page.locator("#source-editor-angle")).toHaveText("0 deg");
+
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeDisabled();
+  await page.getByRole("button", { name: "Reset flip" }).click();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await expect(page.getByLabel("Expand crop")).toBeChecked();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+});
+
+test("applies confirmed source crops to downstream generation", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Grid mode").selectOption("source-pixels");
+  await page.locator("#source-pixels").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "4";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#image-input").setInputFiles({
+    name: "cropped-source.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Crop", exact: true }).click();
+  await dragEditorCanvas(page, 0.98, 0.98, 0.55, 0.55);
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const editedCellCount = await statNumber(page, "#cell-count");
+  expect(editedCellCount).toBeGreaterThan(0);
+  expect(editedCellCount).toBeLessThan(192);
+});
+
+test("ignores stale uploads when another source is loaded first", async ({ page }) => {
+  await delayFirstBlobImageLoad(page);
+
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "slow-upload.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.waitForTimeout(700);
+
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#source-name")).toContainText("sample-gradient");
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+});
+
+test("ignores stale uploads when generate falls back to the sample", async ({ page }) => {
+  await delayFirstBlobImageLoad(page);
+
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "slow-generate-upload.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.waitForTimeout(700);
+
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#source-name")).toContainText("sample-gradient");
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+});
+
+test("blocks replacement uploads while source edits are open", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.locator("#image-input").setInputFiles({
+    name: "blocked-replacement.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  });
+  await expect(page.locator("#status")).toContainText(
+    "Confirm or cancel source edits before uploading another image",
+  );
+  await expect(page.locator("#source-editor")).toBeVisible();
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+  await expect(page.locator("#source-name")).toContainText("sample-gradient");
+  await expect(page.getByRole("button", { name: "Edit source" })).toBeEnabled();
+});
+
+test("can upload the same file again after cancelling source edits", async ({ page }) => {
+  await page.goto("/");
+  const upload = {
+    name: "repeat-upload.png",
+    mimeType: "image/png",
+    buffer: fixturePngBuffer(),
+  };
+
+  await page.locator("#image-input").setInputFiles(upload);
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#source-editor")).toBeHidden();
+
+  await page.locator("#image-input").setInputFiles(upload);
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await expect(page.locator("#status")).toContainText("Confirm source edits");
+});
+
+test("preserves grid settings when confirming unchanged source edits", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.locator("#columns").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "77";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#columns-output")).toHaveText("77");
+
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.locator("#columns-output")).toHaveText("77");
+});
+
+test("keeps in-flight generation valid when source edits are cancelled", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.locator("#columns").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "180";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#rows").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "180";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#columns-output")).toHaveText("180");
+  await expect(page.locator("#rows-output")).toHaveText("180");
+
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText(/Generated|Sampling|Rendering|Building/, {
+    timeout: 5_000,
+  });
+  await page.getByRole("button", { name: "Edit source" }).click();
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Generate mosaic" })).toBeDisabled();
+
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Generate mosaic" })).toBeEnabled();
+  await expect(page.locator("#cell-count")).toContainText("32,400");
 });
 
 test("contains the desktop preview by default and supports preview zoom controls", async ({
@@ -247,6 +463,62 @@ async function statNumber(page: Page, selector: string): Promise<number> {
   const text = await page.locator(selector).textContent();
   const match = text?.match(/\d[\d,]*/);
   return Number(match?.[0].replaceAll(",", "") ?? 0);
+}
+
+async function dragEditorCanvas(
+  page: Page,
+  startXRatio: number,
+  startYRatio: number,
+  endXRatio: number,
+  endYRatio: number,
+): Promise<void> {
+  const canvas = page.locator("#source-editor-canvas");
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const startX = box!.x + box!.width * startXRatio;
+  const startY = box!.y + box!.height * startYRatio;
+  const endX = box!.x + box!.width * endXRatio;
+  const endY = box!.y + box!.height * endYRatio;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function delayFirstBlobImageLoad(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (!descriptor?.get || !descriptor.set) {
+      return;
+    }
+
+    const NativeImage = window.Image;
+    let delayedBlobLoads = 0;
+    window.Image = function patchedImage(width?: number, height?: number) {
+      const image = new NativeImage(width, height);
+      Object.defineProperty(image, "src", {
+        configurable: true,
+        get() {
+          return descriptor.get!.call(image);
+        },
+        set(value: string) {
+          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? 350 : 0;
+          delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
+          window.setTimeout(() => descriptor.set!.call(image, value), delay);
+        },
+      });
+      return image;
+    } as typeof Image;
+    window.Image.prototype = NativeImage.prototype;
+  });
+}
+
+function fixturePngBuffer(): Buffer {
+  return Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAgklEQVR4nO3ZwQnAIBAFwYz779l2UBG8BKUIgeA2EJh99p5hMElvG8/rCwD8kUBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQOB1rfu+p6PrnYvLWlQdVx9bMwcC5JOTmXMhICAAAAAAAAAAAAB4Gg+KOQdKPkSrjAAAAABJRU5ErkJggg==",
+    "base64",
+  );
 }
 
 function pngDimensions(buffer: Buffer): { width: number; height: number } {
