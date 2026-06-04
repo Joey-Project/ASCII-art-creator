@@ -65,6 +65,60 @@ test("generates a mosaic from an uploaded image and exports all formats", async 
   }
 });
 
+test("contains the desktop preview by default and supports preview zoom controls", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "desktop project only");
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const frame = await page.locator(".preview-frame").boundingBox();
+  const canvas = await page.locator("#preview-canvas").boundingBox();
+  expect(frame).not.toBeNull();
+  expect(canvas).not.toBeNull();
+  expect(canvas!.width).toBeLessThanOrEqual(frame!.width + 1);
+  expect(canvas!.height).toBeLessThanOrEqual(frame!.height + 1);
+  await expect(page.locator(".preview-frame")).toHaveCSS("background-color", "rgb(251, 252, 251)");
+  await expect(page.locator("#preview-canvas")).toHaveCSS("border-top-width", "1px");
+
+  const controls = await page.locator(".controls").boundingBox();
+  const workspace = await page.locator(".workspace").boundingBox();
+  expect(controls).not.toBeNull();
+  expect(workspace).not.toBeNull();
+  expect(Math.abs(controls!.height - workspace!.height)).toBeLessThanOrEqual(1);
+
+  const containedWidth = canvas!.width;
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect
+    .poll(async () => (await page.locator("#preview-canvas").boundingBox())?.width ?? 0)
+    .toBeGreaterThan(containedWidth);
+
+  await page.getByRole("button", { name: "Fit preview" }).click();
+  await expect
+    .poll(async () => (await page.locator("#preview-canvas").boundingBox())?.width ?? 0)
+    .toBeLessThanOrEqual(frame!.width + 1);
+
+  const fitWidth = (await page.locator("#preview-canvas").boundingBox())!.width;
+  await page.locator(".preview-frame").dispatchEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY: -600,
+  });
+  await expect
+    .poll(async () => (await page.locator("#preview-canvas").boundingBox())?.width ?? 0)
+    .toBeGreaterThan(fitWidth);
+
+  const wheelZoomWidth = (await page.locator("#preview-canvas").boundingBox())!.width;
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  await expect
+    .poll(async () => (await page.locator("#preview-canvas").boundingBox())?.width ?? 0)
+    .toBeLessThan(wheelZoomWidth);
+});
+
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("User glyphs").fill("漢字🙂");
