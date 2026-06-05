@@ -1714,6 +1714,9 @@ function candidateColorSelectionKey(settings: RenderSettings): string {
   }
 
   switch (settings.colorStrategy) {
+    case "source":
+    case "uniform":
+      return "intrinsic-color";
     case "glyph":
     case "font":
     case "glyph-font":

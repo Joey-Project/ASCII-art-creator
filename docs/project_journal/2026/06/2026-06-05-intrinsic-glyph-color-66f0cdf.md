@@ -24,6 +24,7 @@ superseded_by:
 - In color mode, strong intrinsic glyph color overrides app-assigned grouping color for candidate scoring; weaker intrinsic color blends with the assigned color.
 - Source and uniform strategies remain feature-only for recolorable glyphs, but intrinsic colored glyphs compare their sampled native color against the source cell average.
 - Mono mode remains feature-only so grayscale matching behavior is unchanged.
+- Switching between mono and color source/uniform marks the mosaic stale because intrinsic color can change candidate selection; switching between source and uniform inside color mode stays visual-only.
 
 ## Next Steps
 

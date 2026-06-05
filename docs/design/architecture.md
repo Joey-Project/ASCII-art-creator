@@ -93,6 +93,8 @@ Supported color strategies:
 
 Source and uniform color strategies remain feature-only for normally recolorable glyphs because all candidates can receive the same app-assigned foreground color. Candidates with intrinsic native color are the exception: their sampled color is compared with the source cell average so mismatched emoji are penalized and matching emoji can stay competitive. Mono mode remains feature-only; intrinsic color is detected but does not alter grayscale matching.
 
+Because intrinsic color can affect source and uniform candidate selection only in color mode, switching between mono and color source/uniform marks the existing mosaic stale and requires regeneration before export. Switching between source and uniform inside color mode is visual-only because the intrinsic-color selection policy is unchanged.
+
 Background color is configurable. Transparent background is allowed for PNG/SVG when the selected export path supports it.
 
 ## Export Model
