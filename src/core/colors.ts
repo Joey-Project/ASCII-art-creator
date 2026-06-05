@@ -6,6 +6,7 @@ import type {
 } from "../domain/types";
 
 const COLOR_AWARE_SELECTION_WEIGHT = 1.45;
+const FULL_INTRINSIC_COLOR_STRENGTH = 0.85;
 const stringColorCache = new Map<string, string>();
 const rgbCache = new Map<string, RgbColor | null>();
 
@@ -48,13 +49,16 @@ export function colorAwareCandidateScore(
   candidate: GlyphCandidate,
   featureScore: number,
 ): number {
-  const candidateColor = colorForCandidateSelection(settings, strategy, candidate);
-  if (!candidateColor) {
+  const selectionColor = colorForCandidateSelection(settings, strategy, candidate);
+  if (!selectionColor) {
     return featureScore;
   }
 
   return (
-    featureScore + colorDistance(cell.sourceColor, candidateColor) * COLOR_AWARE_SELECTION_WEIGHT
+    featureScore +
+    colorDistance(cell.sourceColor, selectionColor.color) *
+      COLOR_AWARE_SELECTION_WEIGHT *
+      selectionColor.weight
   );
 }
 
@@ -99,15 +103,54 @@ export function rgbToHex(red: number, green: number, blue: number): string {
   return `#${parts.join("")}`;
 }
 
+interface CandidateSelectionColor {
+  color: string;
+  weight: number;
+}
+
 function colorForCandidateSelection(
   settings: RenderSettings,
   strategy: ColorStrategy,
   candidate: GlyphCandidate,
-): string | null {
+): CandidateSelectionColor | null {
   if (settings.colorMode === "mono") {
     return null;
   }
 
+  const intrinsicColor = candidate.intrinsicColor;
+  const intrinsicStrength = Math.max(0, Math.min(1, candidate.intrinsicColorStrength ?? 0));
+  const assignedColor = assignedCandidateColor(strategy, candidate);
+
+  if (intrinsicColor && intrinsicStrength > 0) {
+    if (!assignedColor) {
+      return {
+        color: intrinsicColor,
+        weight: intrinsicStrength >= FULL_INTRINSIC_COLOR_STRENGTH ? 1 : intrinsicStrength,
+      };
+    }
+
+    if (intrinsicStrength >= FULL_INTRINSIC_COLOR_STRENGTH) {
+      return {
+        color: intrinsicColor,
+        weight: 1,
+      };
+    }
+
+    return {
+      color: blendColors(assignedColor, intrinsicColor, intrinsicStrength),
+      weight: 1,
+    };
+  }
+
+  return assignedColor
+    ? {
+        color: assignedColor,
+        weight: 1,
+      }
+    : null;
+}
+
+function assignedCandidateColor(strategy: ColorStrategy, candidate: GlyphCandidate): string | null {
   switch (strategy) {
     case "glyph":
       return colorFromString(candidate.glyph);
@@ -120,6 +163,21 @@ function colorForCandidateSelection(
     default:
       return null;
   }
+}
+
+function blendColors(first: string, second: string, amount: number): string {
+  const firstRgb = parseColor(first);
+  const secondRgb = parseColor(second);
+  if (!firstRgb || !secondRgb) {
+    return second;
+  }
+
+  const blend = clamp01(amount);
+  return rgbToHex(
+    firstRgb.red * (1 - blend) + secondRgb.red * blend,
+    firstRgb.green * (1 - blend) + secondRgb.green * blend,
+    firstRgb.blue * (1 - blend) + secondRgb.blue * blend,
+  );
 }
 
 function parseColor(color: string): RgbColor | null {

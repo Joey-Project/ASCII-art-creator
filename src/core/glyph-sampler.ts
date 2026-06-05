@@ -5,9 +5,10 @@ import type {
   ProgressCallback,
   RenderSettings,
 } from "../domain/types";
-import { FEATURE_SIZE, extractFeatureFromDarkness } from "./features";
+import { FEATURE_SIZE, clamp01, extractFeatureFromDarkness } from "./features";
 import { canvasFont } from "./canvas";
 import { isAsciiGrapheme } from "./graphemes";
+import { rgbToHex } from "./colors";
 
 const MISSING_GLYPH_SENTINELS = ["\u{10ffff}", "\uffff", "\ufffe"];
 const FALLBACK_FAMILIES = ["sans-serif", "serif", "monospace"];
@@ -19,10 +20,21 @@ const GENERIC_FAMILIES = new Set([
   "fantasy",
   "system-ui",
 ]);
+const INTRINSIC_COLOR_PROBE = "#ff00ff";
+const FULL_INTRINSIC_COLOR_STRENGTH = 0.85;
+const MIN_INTRINSIC_VISIBLE_ALPHA = 0.01;
+const MIN_INTRINSIC_COLOR_STRENGTH = 0.08;
+const MAX_NATIVE_RECOLOR_DELTA = 0.08;
 const fallbackSignatureCache = new Map<string, Set<string>>();
+
+export interface IntrinsicGlyphColor {
+  color: string;
+  strength: number;
+}
 
 interface RenderedGlyph {
   candidate: GlyphCandidate;
+  imageData: ImageData;
   signature: string;
 }
 
@@ -55,7 +67,11 @@ export async function buildGlyphCandidates(
         if (
           isRenderableGlyph(glyph, font, weight, sampleFontSize, rendered, missingGlyphSignatures)
         ) {
-          candidates.push(rendered.candidate);
+          candidates.push(
+            settings.colorMode === "color"
+              ? withIntrinsicGlyphColor(rendered, sampleFontSize)
+              : rendered.candidate,
+          );
         }
 
         if (completed % 64 === 0) {
@@ -117,30 +133,7 @@ function renderGlyphWithFamily(
   fontSource: FontSource,
   fontDataUrl?: string,
 ): RenderedGlyph {
-  const canvas = document.createElement("canvas");
-  canvas.width = FEATURE_SIZE;
-  canvas.height = FEATURE_SIZE;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) {
-    throw new Error("Canvas 2D glyph sampling is not available");
-  }
-
-  context.clearRect(0, 0, FEATURE_SIZE, FEATURE_SIZE);
-  context.fillStyle = "#000000";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.font = canvasFont(weight, sampleFontSize, family);
-  context.fillText(glyph, FEATURE_SIZE / 2, FEATURE_SIZE / 2 + FEATURE_SIZE * 0.04);
-
-  const imageData = context.getImageData(0, 0, FEATURE_SIZE, FEATURE_SIZE);
-  const values = new Float32Array(FEATURE_SIZE * FEATURE_SIZE);
-  const signatureBits: string[] = [];
-
-  for (let index = 0; index < values.length; index += 1) {
-    const offset = index * 4;
-    values[index] = imageData.data[offset + 3] / 255;
-    signatureBits.push(values[index] > 0.02 ? "1" : "0");
-  }
+  const sample = renderGlyphShapeSample(glyph, family, weight, sampleFontSize);
 
   return {
     candidate: {
@@ -151,10 +144,211 @@ function renderGlyphWithFamily(
       fontSource,
       fontDataUrl,
       weight,
-      features: extractFeatureFromDarkness(values),
+      features: extractFeatureFromDarkness(sample.alphaValues),
     },
+    imageData: sample.imageData,
+    signature: sample.signature,
+  };
+}
+
+function withIntrinsicGlyphColor(rendered: RenderedGlyph, sampleFontSize: number): GlyphCandidate {
+  const initialIntrinsicColor = measureIntrinsicGlyphColor(rendered.imageData.data);
+  const intrinsicColor =
+    initialIntrinsicColor && initialIntrinsicColor.strength >= FULL_INTRINSIC_COLOR_STRENGTH
+      ? initialIntrinsicColor
+      : shouldProbeIntrinsicGlyphColor(rendered.candidate.glyph, initialIntrinsicColor)
+        ? measureIntrinsicGlyphColor(
+            rendered.imageData.data,
+            renderGlyphImageData(
+              rendered.candidate.glyph,
+              rendered.candidate.fontFamily,
+              rendered.candidate.weight,
+              sampleFontSize,
+              INTRINSIC_COLOR_PROBE,
+            ).data,
+          )
+        : initialIntrinsicColor;
+
+  return {
+    ...rendered.candidate,
+    intrinsicColor: intrinsicColor?.color,
+    intrinsicColorStrength: intrinsicColor?.strength,
+  };
+}
+
+interface GlyphShapeSample {
+  imageData: ImageData;
+  alphaValues: Float32Array;
+  signature: string;
+}
+
+function renderGlyphShapeSample(
+  glyph: string,
+  family: string,
+  weight: number,
+  sampleFontSize: number,
+): GlyphShapeSample {
+  const imageData = renderGlyphImageData(glyph, family, weight, sampleFontSize, "#000000");
+  const alphaValues = new Float32Array(FEATURE_SIZE * FEATURE_SIZE);
+  const signatureBits: string[] = [];
+
+  for (let index = 0; index < alphaValues.length; index += 1) {
+    const offset = index * 4;
+    alphaValues[index] = imageData.data[offset + 3] / 255;
+    signatureBits.push(alphaValues[index] > 0.02 ? "1" : "0");
+  }
+
+  return {
+    imageData,
+    alphaValues,
     signature: signatureBits.join(""),
   };
+}
+
+function renderGlyphSignatureWithFamily(
+  glyph: string,
+  family: string,
+  weight: number,
+  sampleFontSize: number,
+): string {
+  return renderGlyphShapeSample(glyph, family, weight, sampleFontSize).signature;
+}
+
+function renderGlyphImageData(
+  glyph: string,
+  family: string,
+  weight: number,
+  sampleFontSize: number,
+  fillStyle: string,
+): ImageData {
+  const canvas = document.createElement("canvas");
+  canvas.width = FEATURE_SIZE;
+  canvas.height = FEATURE_SIZE;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new Error("Canvas 2D glyph sampling is not available");
+  }
+
+  context.clearRect(0, 0, FEATURE_SIZE, FEATURE_SIZE);
+  context.fillStyle = fillStyle;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = canvasFont(weight, sampleFontSize, family);
+  context.fillText(glyph, FEATURE_SIZE / 2, FEATURE_SIZE / 2 + FEATURE_SIZE * 0.04);
+  return context.getImageData(0, 0, FEATURE_SIZE, FEATURE_SIZE);
+}
+
+export function measureIntrinsicGlyphColor(
+  data: Uint8ClampedArray,
+  recolorProbeData?: Uint8ClampedArray,
+): IntrinsicGlyphColor | null {
+  const sample = summarizeVisibleColor(data);
+  if (!sample) {
+    return null;
+  }
+
+  const directStrength = Math.max(sample.luminanceSignal, sample.chromaSignal);
+  if (directStrength >= FULL_INTRINSIC_COLOR_STRENGTH) {
+    return {
+      color: sample.color,
+      strength: clamp01(directStrength),
+    };
+  }
+
+  const recolorProbe = recolorProbeData ? summarizeVisibleColor(recolorProbeData) : null;
+  if (recolorProbe) {
+    if (colorDelta(sample, recolorProbe) <= MAX_NATIVE_RECOLOR_DELTA) {
+      return {
+        color: sample.color,
+        strength: 1,
+      };
+    }
+
+    return null;
+  }
+
+  if (directStrength >= MIN_INTRINSIC_COLOR_STRENGTH) {
+    return {
+      color: sample.color,
+      strength: clamp01(directStrength),
+    };
+  }
+
+  return null;
+}
+
+export function shouldProbeIntrinsicGlyphColor(
+  glyph: string,
+  intrinsicColor: IntrinsicGlyphColor | null,
+): boolean {
+  if (intrinsicColor) {
+    return intrinsicColor.strength < FULL_INTRINSIC_COLOR_STRENGTH;
+  }
+
+  return !isAsciiGrapheme(glyph);
+}
+
+interface VisibleColorSummary {
+  red: number;
+  green: number;
+  blue: number;
+  color: string;
+  luminanceSignal: number;
+  chromaSignal: number;
+}
+
+function summarizeVisibleColor(data: Uint8ClampedArray): VisibleColorSummary | null {
+  let alphaSum = 0;
+  let redSum = 0;
+  let greenSum = 0;
+  let blueSum = 0;
+  let luminanceSignal = 0;
+  let chromaSignal = 0;
+
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const alpha = data[offset + 3] / 255;
+    if (alpha <= 0) {
+      continue;
+    }
+
+    const red = data[offset];
+    const green = data[offset + 1];
+    const blue = data[offset + 2];
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+
+    alphaSum += alpha;
+    redSum += red * alpha;
+    greenSum += green * alpha;
+    blueSum += blue * alpha;
+    luminanceSignal += ((0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255) * alpha;
+    chromaSignal += ((max - min) / 255) * alpha;
+  }
+
+  const pixelCount = data.length / 4;
+  if (pixelCount === 0 || alphaSum / pixelCount < MIN_INTRINSIC_VISIBLE_ALPHA) {
+    return null;
+  }
+
+  const red = redSum / alphaSum;
+  const green = greenSum / alphaSum;
+  const blue = blueSum / alphaSum;
+
+  return {
+    color: rgbToHex(red, green, blue),
+    red,
+    green,
+    blue,
+    luminanceSignal: luminanceSignal / alphaSum,
+    chromaSignal: chromaSignal / alphaSum,
+  };
+}
+
+function colorDelta(first: VisibleColorSummary, second: VisibleColorSummary): number {
+  const red = (first.red - second.red) / 255;
+  const green = (first.green - second.green) / 255;
+  const blue = (first.blue - second.blue) / 255;
+  return Math.sqrt(red * red + green * green + blue * blue) / Math.sqrt(3);
 }
 
 function isRenderableGlyph(
@@ -198,7 +392,11 @@ export function shouldFilterAgainstFallbackSignatures(
   return !GENERIC_FAMILIES.has(font.family);
 }
 
-function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: number): Set<string> {
+export function fallbackSignaturesFor(
+  glyph: string,
+  weight: number,
+  sampleFontSize: number,
+): Set<string> {
   const cacheKey = `${glyph}:${weight}:${sampleFontSize}`;
   const cached = fallbackSignatureCache.get(cacheKey);
   if (cached) {
@@ -206,17 +404,8 @@ function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: nu
   }
 
   const signatures = new Set(
-    FALLBACK_FAMILIES.map(
-      (family) =>
-        renderGlyphWithFamily(
-          glyph,
-          family,
-          family,
-          `fallback-${family}`,
-          weight,
-          sampleFontSize,
-          "builtin",
-        ).signature,
+    FALLBACK_FAMILIES.map((family) =>
+      renderGlyphSignatureWithFamily(glyph, family, weight, sampleFontSize),
     ),
   );
   fallbackSignatureCache.set(cacheKey, signatures);

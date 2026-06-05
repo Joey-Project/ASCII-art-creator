@@ -372,7 +372,20 @@ test("requires regeneration when grouped color scoring settings change", async (
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 
   await page.getByRole("button", { name: "Color" }).click();
+  await expect(page.locator("#status")).toContainText("Settings changed");
+  await page.getByRole("button", { name: "TXT" }).click();
+  await expect(page.locator("#status")).toContainText(
+    "Regenerate the mosaic before exporting structural changes",
+  );
+
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.getByLabel("Color strategy").selectOption("uniform");
   await expect(page.locator("#status")).toContainText("Visual settings updated");
+  await page.getByLabel("Color strategy").selectOption("source");
+  await expect(page.locator("#status")).toContainText("Visual settings updated");
+
   const sourceColorPreview = await previewCanvasDataUrl(page);
 
   await page.getByLabel("Color strategy").selectOption("glyph");
