@@ -184,10 +184,10 @@ app.innerHTML = `
         <h2>Glyphs</h2>
         <label>
           User glyphs
-          <textarea id="glyph-input" rows="3" spellcheck="false" placeholder="Optional additions. Checked packs below still apply; uncheck ASCII to use only this field."></textarea>
+          <textarea id="glyph-input" rows="3" spellcheck="false" placeholder="Added on top of checked packs below. Uncheck ASCII to use only this field."></textarea>
         </label>
         <div id="glyph-packs" class="checkbox-grid" aria-label="Glyph packs"></div>
-        <p class="hint">User glyphs are added to checked packs. To use only this field, uncheck ASCII and any other packs below.</p>
+        <p class="hint">User glyphs are added in addition to all selected packs below. To use only this field, uncheck ASCII and any other packs.</p>
       </div>
 
       <div class="control-group">
@@ -214,7 +214,7 @@ app.innerHTML = `
           <label><input type="checkbox" class="weight-checkbox" value="300" /> 300 Light</label>
           <label><input type="checkbox" class="weight-checkbox" value="400" checked /> 400 Regular</label>
           <label><input type="checkbox" class="weight-checkbox" value="500" /> 500 Medium</label>
-          <label><input type="checkbox" class="weight-checkbox" value="700" checked /> 700 Bold</label>
+          <label><input type="checkbox" class="weight-checkbox" value="700" /> 700 Bold</label>
           <label><input type="checkbox" class="weight-checkbox" value="900" /> 900 Black</label>
         </div>
       </div>
@@ -467,6 +467,10 @@ function bindControls(): void {
       return;
     }
 
+    const weights = selectedWeights();
+    for (const font of uploaded) {
+      font.weights = weights;
+    }
     state.fonts.push(...uploaded);
     renderFontList();
     markNeedsRegenerate();

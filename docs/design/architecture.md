@@ -12,7 +12,7 @@ The default candidate library is ASCII only. Non-ASCII glyphs, including CJK, ka
 - Source editing: crop, rotate, and flip operations are stored as replayable edit operations against the original image. The confirmed result is cached as a canvas and becomes the source consumed by the generator.
 - Grid setup: users choose row/column counts directly, or choose source pixels per glyph. The app recommends initial rows and columns from uploaded image dimensions, keeping aspect ratio and balancing detail against preview performance.
 - Glyph setup: default ASCII candidates are always available. User text and explicit glyph packs can add multilingual or symbol candidates.
-- Font setup: default web-safe font presets are available first. Uploaded fonts are registered with `FontFace`. Local Font Access is a progressive enhancement for supported desktop browsers and must degrade cleanly when unavailable.
+- Font setup: default web-safe font presets are available first, but only Monospace at `400 Regular` is selected by default. Additional fonts and weights are opt-in. Uploaded fonts are registered with `FontFace`. Local Font Access is a progressive enhancement for supported desktop browsers and must degrade cleanly when unavailable.
 - Preview and export: the canvas preview is the visual source of truth; text/SVG/PDF exports derive from the same cell grid.
 
 ## Rendering Model

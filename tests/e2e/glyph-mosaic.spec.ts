@@ -344,7 +344,7 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   const initialCellCount = await statNumber(page, "#cell-count");
   const plannedCandidateCount = await statNumber(page, "#candidate-count");
-  expect(plannedCandidateCount).toBeGreaterThan(500);
+  expect(plannedCandidateCount).toBeGreaterThan(150);
 
   await page.locator("#source-pixels").evaluate((element) => {
     const input = element as HTMLInputElement;
@@ -374,9 +374,11 @@ test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async (
   await page.goto("/");
   await expect(page.getByLabel("User glyphs")).toHaveAttribute(
     "placeholder",
-    /uncheck ASCII to use only this field/,
+    /Added on top of checked packs below/,
   );
-  await expect(page.getByText("User glyphs are added to checked packs")).toBeVisible();
+  await expect(
+    page.getByText("User glyphs are added in addition to all selected packs below"),
+  ).toBeVisible();
   await page.getByLabel("ASCII").uncheck();
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Add at least one glyph");
@@ -413,14 +415,12 @@ test("filters fonts with fuzzy and exact search and labels font weights", async 
 
   await page.getByLabel("Search fonts").fill("msp");
   await expect(page.getByText("Monospace")).toBeVisible();
-  await expect(page.locator("#font-scan-hint")).toContainText(
-    "2 selected fonts are hidden by search and still included in generation.",
-  );
+  await expect(page.locator("#font-scan-hint")).not.toContainText("selected font");
 
   await page.getByLabel("Exact text match").check();
   await expect(page.getByText("No fonts match this search.")).toBeVisible();
   await expect(page.locator("#font-scan-hint")).toContainText(
-    "3 selected fonts are hidden by search and still included in generation.",
+    "1 selected font is hidden by search and still included in generation.",
   );
 
   await page.getByLabel("Search fonts").fill("mono");

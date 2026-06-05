@@ -58,7 +58,7 @@ export const GLYPH_PACKS: GlyphPack[] = [
   },
   {
     id: "math",
-    label: "Math",
+    label: "Math Symbols",
     description: "Mathematical operators and Greek symbols.",
     glyphs: MATH_SYMBOLS,
     defaultEnabled: false,
