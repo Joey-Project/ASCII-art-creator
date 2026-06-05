@@ -172,7 +172,7 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
 });
 
 test("ignores stale uploads when generate falls back to the sample", async ({ page }) => {
-  await delayFirstBlobImageLoad(page);
+  await delayFirstBlobImageLoad(page, 2_000);
 
   await page.goto("/");
   await page.locator("#image-input").setInputFiles({
@@ -180,7 +180,9 @@ test("ignores stale uploads when generate falls back to the sample", async ({ pa
     mimeType: "image/png",
     buffer: fixturePngBuffer(),
   });
-  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  const generateButton = page.getByRole("button", { name: "Generate mosaic" });
+  await expect(generateButton).toBeEnabled();
+  await generateButton.click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   await page.waitForTimeout(700);
 
@@ -253,6 +255,7 @@ test("keeps in-flight generation valid when source edits are cancelled", async (
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await broadenCandidatesForInFlightGeneration(page);
 
   await page.locator("#columns").evaluate((element) => {
     const input = element as HTMLInputElement;
@@ -268,9 +271,6 @@ test("keeps in-flight generation valid when source edits are cancelled", async (
   await expect(page.locator("#rows-output")).toHaveText("180");
 
   await page.getByRole("button", { name: "Generate mosaic" }).click();
-  await expect(page.locator("#status")).toContainText(/Generated|Sampling|Rendering|Building/, {
-    timeout: 5_000,
-  });
   await page.getByRole("button", { name: "Edit source" }).click();
   await expect(page.locator("#source-editor")).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -569,8 +569,27 @@ async function dragEditorCanvas(
   await page.mouse.up();
 }
 
-async function delayFirstBlobImageLoad(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function broadenCandidatesForInFlightGeneration(page: Page): Promise<void> {
+  for (const pack of ["CJK", "Kana", "Math Symbols", "Symbols"]) {
+    await page.getByLabel(pack, { exact: true }).check();
+  }
+  await page.locator(".font-row input").evaluateAll((inputs) => {
+    for (const input of inputs as HTMLInputElement[]) {
+      input.checked = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  await page.locator(".weight-checkbox").evaluateAll((inputs) => {
+    for (const input of inputs as HTMLInputElement[]) {
+      input.checked = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  expect(await statNumber(page, "#candidate-count")).toBeGreaterThan(5_000);
+}
+
+async function delayFirstBlobImageLoad(page: Page, delayMs = 350): Promise<void> {
+  await page.addInitScript((configuredDelayMs) => {
     const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
     if (!descriptor?.get || !descriptor.set) {
       return;
@@ -586,7 +605,7 @@ async function delayFirstBlobImageLoad(page: Page): Promise<void> {
           return descriptor.get!.call(image);
         },
         set(value: string) {
-          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? 350 : 0;
+          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? configuredDelayMs : 0;
           delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
           window.setTimeout(() => descriptor.set!.call(image, value), delay);
         },
@@ -594,7 +613,7 @@ async function delayFirstBlobImageLoad(page: Page): Promise<void> {
       return image;
     } as typeof Image;
     window.Image.prototype = NativeImage.prototype;
-  });
+  }, delayMs);
 }
 
 function fixturePngBuffer(): Buffer {

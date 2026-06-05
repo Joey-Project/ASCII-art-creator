@@ -34,4 +34,4 @@ superseded_by:
 
 - Validation: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`
 - Unit coverage: 9 files / 46 tests passed
-- E2E coverage: 28 passed / 2 skipped across desktop and mobile projects
+- E2E coverage: 31 passed / 5 skipped across desktop and mobile projects
