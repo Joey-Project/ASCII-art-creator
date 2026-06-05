@@ -442,6 +442,9 @@ test("filters fonts with fuzzy and exact search and labels font weights", async 
   await expect(page.getByText("Font weights")).toBeVisible();
   await expect(page.getByText("400 Regular")).toBeVisible();
   await expect(page.getByText("700 Bold")).toBeVisible();
+  await page.getByLabel("400 Regular").click();
+  await expect(page.getByLabel("400 Regular")).toBeChecked();
+  await expect(page.locator("#status")).toContainText("Select at least one font weight");
   await expect(page.locator("#font-scan-hint")).toContainText("Local Font Access");
 
   await page.getByLabel("Search fonts").fill("msp");

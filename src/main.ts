@@ -585,7 +585,13 @@ function bindControls(): void {
   );
 
   for (const checkbox of document.querySelectorAll<HTMLInputElement>(".weight-checkbox")) {
-    checkbox.addEventListener("change", () => {
+    checkbox.addEventListener("change", (event) => {
+      const changed = event.target as HTMLInputElement;
+      if (!changed.checked && selectedWeights().length === 0) {
+        changed.checked = true;
+        setStatus("Select at least one font weight");
+        return;
+      }
       const weights = selectedWeights();
       for (const font of state.fonts) {
         font.weights = weights;
@@ -1550,10 +1556,9 @@ function activeGlyphs(): string[] {
 }
 
 function selectedWeights(): number[] {
-  const weights = Array.from(
-    document.querySelectorAll<HTMLInputElement>(".weight-checkbox:checked"),
-  ).map((input) => Number(input.value));
-  return weights.length > 0 ? weights : [400];
+  return Array.from(document.querySelectorAll<HTMLInputElement>(".weight-checkbox:checked")).map(
+    (input) => Number(input.value),
+  );
 }
 
 function drawPreview(): void {
