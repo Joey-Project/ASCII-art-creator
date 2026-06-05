@@ -69,14 +69,14 @@ Both source cells and glyph candidates should use comparable features:
 - Local contrast to keep outlines legible.
 - Optional dithering, such as Floyd-Steinberg style error diffusion over density, to simulate additional gray levels.
 
-For color output, glyph selection should still express lightness and texture, while foreground color can come from source image sampling or user-selected grouping rules. When the user chooses grouped color strategies (`glyph`, `font`, or `glyph + font + weight`), the matcher adds a bounded RGB-distance penalty between the source cell's average color and the candidate's grouped foreground color. This lets strong color changes steer the cell toward a different candidate without disabling the density bucket prefilter or replacing the shape score. Intrinsic colored glyphs use their sampled native color as the candidate color signal; strong native color, such as color emoji, overrides app-assigned grouping color for scoring because browser rendering may ignore `fillStyle`.
+For color output, glyph selection should still express lightness and texture, while foreground color can come from source image sampling or user-selected grouping rules. When color influence is enabled, the matcher projects each candidate's expected average output color by blending the active background with the candidate foreground according to glyph density, then adds a bounded RGB-distance penalty against the source cell's average color. This lets strong color changes steer the cell toward a different candidate without disabling the density bucket prefilter or replacing the shape score. Intrinsic colored glyphs use their sampled native color as the candidate color signal; strong native color, such as color emoji, overrides app-assigned grouping color for scoring because browser rendering may ignore `fillStyle`.
 
 ## Performance Strategy
 
 Feature extraction and matching should run in Web Workers once the library or grid becomes large. The initial matching path should use a staged search:
 
 - Bucket candidates by brightness/density and only compare nearby buckets.
-- Within buckets, rank by weighted feature distance, optionally plus grouped-color or intrinsic-glyph color distance.
+- Within buckets, rank by weighted feature distance, optionally plus projected output color distance.
 - Add KD-tree or approximate nearest-neighbor indexing when candidate count makes bucket search too slow.
 - Use progressive rendering so the preview can update quickly before the full-resolution export grid completes.
 
@@ -87,14 +87,15 @@ The UI should expose quality controls without forcing maximum-cost matching by d
 Supported color strategies:
 
 - Monochrome: convert source to luminance and render all glyphs with a chosen foreground color.
-- Source color: choose glyphs by luminance/texture and use each cell's sampled source color.
-- By glyph: assign colors by glyph identity; candidate selection also prefers glyph colors closer to the source cell average color.
-- By font: assign colors by font family; candidate selection also prefers font colors closer to the source cell average color.
-- By glyph-font combination: assign colors by the full `glyph + font + weight` candidate; candidate selection also prefers grouped colors closer to the source cell average color.
+- Source color: use each cell's sampled source color as the candidate foreground. With color influence enabled, candidate density still affects selection because sparse glyphs blend more background into the projected output color.
+- Uniform: use the chosen foreground for every cell. With color influence enabled, candidate density is scored against the source cell average color, so the matcher can choose denser or sparser glyphs to better approximate color and brightness.
+- By glyph: assign colors by glyph identity; candidate selection also prefers projected glyph colors closer to the source cell average color.
+- By font: assign colors by font family; candidate selection also prefers projected font colors closer to the source cell average color.
+- By glyph-font combination: assign colors by the full `glyph + font + weight` candidate; candidate selection also prefers projected grouped colors closer to the source cell average color.
 
-Source and uniform color strategies remain feature-only for normally recolorable glyphs because all candidates can receive the same app-assigned foreground color. Candidates with intrinsic native color are the exception: their sampled color is compared with the source cell average so mismatched emoji are penalized and matching emoji can stay competitive. Mono mode remains feature-only; intrinsic color is detected but does not alter grayscale matching.
+The Color influence slider scales the projected color penalty from `0` to `2`. `0` disables color-aware selection and keeps candidate matching feature-only; `1` is the default balanced setting; values above `1` make source-average color more willing to beat a slightly better shape or texture match. Mono mode remains feature-only; intrinsic color is detected but does not alter grayscale matching.
 
-Because intrinsic color can affect source and uniform candidate selection only in color mode, switching between mono and color source/uniform marks the existing mosaic stale and requires regeneration before export. Switching between source and uniform inside color mode is visual-only because the intrinsic-color selection policy is unchanged.
+Because projected color can affect candidate selection in color mode, changing color strategy, color influence, background/transparent-background semantics, or uniform foreground can mark the existing mosaic stale and require regeneration before export. Visual-only color changes still redraw the preview immediately when the candidate-selection key is unchanged.
 
 Background color is configurable. Transparent background is allowed for PNG/SVG when the selected export path supports it.
 

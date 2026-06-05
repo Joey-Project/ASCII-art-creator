@@ -13,6 +13,7 @@ const baseSettings: RenderSettings = {
   outputScale: 2,
   colorMode: "mono",
   colorStrategy: "source",
+  colorInfluence: 1,
   foreground: "#111111",
   background: "#ffffff",
   transparentBackground: false,

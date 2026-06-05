@@ -237,6 +237,7 @@ const sampleSettings: RenderSettings = {
   outputScale: 2,
   colorMode: "color",
   colorStrategy: "source",
+  colorInfluence: 1,
   foreground: "#111111",
   background: "#ffffff",
   transparentBackground: false,

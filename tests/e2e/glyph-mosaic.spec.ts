@@ -382,9 +382,9 @@ test("requires regeneration when grouped color scoring settings change", async (
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 
   await page.getByLabel("Color strategy").selectOption("uniform");
-  await expect(page.locator("#status")).toContainText("Visual settings updated");
+  await expect(page.locator("#status")).toContainText("Settings changed");
   await page.getByLabel("Color strategy").selectOption("source");
-  await expect(page.locator("#status")).toContainText("Visual settings updated");
+  await expect(page.locator("#status")).toContainText("Settings changed");
 
   const sourceColorPreview = await previewCanvasDataUrl(page);
 
@@ -402,6 +402,16 @@ test("requires regeneration when grouped color scoring settings change", async (
   const glyphColorPreview = await previewCanvasDataUrl(page);
   await page.getByLabel("Color strategy").selectOption("source");
   await expect.poll(() => previewCanvasDataUrl(page)).not.toBe(glyphColorPreview);
+  await expect(page.locator("#status")).toContainText("Settings changed");
+
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.locator("#color-influence").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "0.5";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#color-influence-output")).toHaveText("0.50x");
   await expect(page.locator("#status")).toContainText("Settings changed");
 });
 

@@ -12,7 +12,7 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 - 非 ASCII 字形只在用户输入字符或显式启用 glyph pack 后进入候选库, 可覆盖汉字、日文假名、数学符号、emoji、音乐符号等可渲染 glyph。
 - 默认只勾选一个内置字体和一个字重, 额外字体、font weight 和 glyph pack 由用户显式启用。
 - 支持按 cell 级别混排 `glyph + font + weight`, 不依赖浏览器排版引擎做整段多字体流排。
-- 支持单色和彩色模式: 单色模式用灰度和字体颜色生成, 彩色模式保留源图颜色并用字符表达明暗、纹理或轮廓。按 glyph/font 分组着色时, 源图 cell 平均色会参与候选评分; emoji 等内建彩色 glyph 也会按采样到的 native color 参与评分。
+- 支持单色和彩色模式: 单色模式用灰度和字体颜色生成, 彩色模式保留源图颜色并用字符表达明暗、纹理或轮廓。Color influence 滑块控制源图 cell 平均色参与候选评分的强度; 设为 0 会回到纯 feature matching。emoji 等内建彩色 glyph 也会按采样到的 native color 参与评分。
 - 支持上传字体和本机字体扫描的渐进增强; 浏览器不支持本机字体访问时仍可使用默认字体和上传字体。字体列表支持 fuzzy search 和 exact text match。
 - 支持设置网格密度: 直接指定行数/列数, 或按每多少源图像素对应一个 glyph 计算。默认根据上传图片尺寸推荐一个桌面可预览、移动端可操作的网格。
 - 目标导出格式包括 `.txt`, `.png`, `.jpeg`, `.svg`, `.pdf`; 图片和 PDF 导出支持分辨率倍率和背景设置, PNG/SVG 在可行时支持透明背景。
@@ -25,7 +25,7 @@ Production domain: <https://glyph-mosaic-creator.mahane.me/>
 4. 调整网格设置: 使用推荐行列数, 手动设置行/列, 或按像素步长生成 cell。
 5. 选择 glyph 候选来源。默认 ASCII; 需要多语言或符号时, 输入字符或显式启用对应 glyph pack。User glyphs 会追加到已勾选 packs; 如果只想使用输入框里的字符, 需要取消勾选 ASCII 和其他 packs。
 6. 选择字体来源和字重。默认只勾选 Monospace 和 `400 Regular`; 其它内置字体、上传字体和本机字体扫描作为显式增强能力。字体多时可以用搜索框筛选, 默认 fuzzy match, 也可以切到 exact text match。
-7. 选择单色或彩色策略, 可启用边缘方向、局部对比度、形状匹配和 dithering 等质量选项。
+7. 选择单色或彩色策略, 并用 Color influence 控制颜色还原对候选 glyph 的影响。默认值会把源图平均色、候选 foreground、背景色和 glyph 密度一起纳入评分; 设为 0 可只按明暗/纹理/轮廓匹配。
 8. 预览结果并导出目标格式。
 
 ## Source edit 语义

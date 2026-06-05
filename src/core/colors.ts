@@ -7,6 +7,7 @@ import type {
 
 const COLOR_AWARE_SELECTION_WEIGHT = 1.45;
 const FULL_INTRINSIC_COLOR_STRENGTH = 0.85;
+const DEFAULT_TRANSPARENT_BACKGROUND_COLOR = "#ffffff";
 const stringColorCache = new Map<string, string>();
 const rgbCache = new Map<string, RgbColor | null>();
 
@@ -49,15 +50,21 @@ export function colorAwareCandidateScore(
   candidate: GlyphCandidate,
   featureScore: number,
 ): number {
-  const selectionColor = colorForCandidateSelection(settings, strategy, candidate);
+  const colorInfluence = clampColorInfluence(settings.colorInfluence);
+  if (colorInfluence === 0) {
+    return featureScore;
+  }
+
+  const selectionColor = colorForCandidateSelection(settings, strategy, cell, candidate);
   if (!selectionColor) {
     return featureScore;
   }
 
   return (
     featureScore +
-    colorDistance(cell.sourceColor, selectionColor.color) *
+    projectedColorDistance(settings, cell.sourceColor, candidate, selectionColor.color) *
       COLOR_AWARE_SELECTION_WEIGHT *
+      colorInfluence *
       selectionColor.weight
   );
 }
@@ -88,10 +95,7 @@ export function colorDistance(first: string, second: string): number {
     return 0;
   }
 
-  const red = (firstRgb.red - secondRgb.red) / 255;
-  const green = (firstRgb.green - secondRgb.green) / 255;
-  const blue = (firstRgb.blue - secondRgb.blue) / 255;
-  return Math.sqrt(red * red + green * green + blue * blue) / Math.sqrt(3);
+  return rgbDistance(firstRgb, secondRgb);
 }
 
 export function rgbToHex(red: number, green: number, blue: number): string {
@@ -111,6 +115,7 @@ interface CandidateSelectionColor {
 function colorForCandidateSelection(
   settings: RenderSettings,
   strategy: ColorStrategy,
+  cell: SourceCellFeature,
   candidate: GlyphCandidate,
 ): CandidateSelectionColor | null {
   if (settings.colorMode === "mono") {
@@ -119,7 +124,7 @@ function colorForCandidateSelection(
 
   const intrinsicColor = candidate.intrinsicColor;
   const intrinsicStrength = Math.max(0, Math.min(1, candidate.intrinsicColorStrength ?? 0));
-  const assignedColor = assignedCandidateColor(strategy, candidate);
+  const assignedColor = assignedCandidateColor(settings, strategy, cell, candidate);
 
   if (intrinsicColor && intrinsicStrength > 0) {
     if (!assignedColor) {
@@ -150,19 +155,50 @@ function colorForCandidateSelection(
     : null;
 }
 
-function assignedCandidateColor(strategy: ColorStrategy, candidate: GlyphCandidate): string | null {
+function assignedCandidateColor(
+  settings: RenderSettings,
+  strategy: ColorStrategy,
+  cell: SourceCellFeature,
+  candidate: GlyphCandidate,
+): string | null {
   switch (strategy) {
+    case "source":
+      return cell.sourceColor;
+    case "uniform":
+      return settings.foreground;
     case "glyph":
       return colorFromString(candidate.glyph);
     case "font":
       return colorFromString(candidate.fontFamily);
     case "glyph-font":
       return colorFromString(`${candidate.glyph}:${candidate.fontFamily}:${candidate.weight}`);
-    case "source":
-    case "uniform":
     default:
       return null;
   }
+}
+
+function projectedColorDistance(
+  settings: RenderSettings,
+  target: string,
+  candidate: GlyphCandidate,
+  foreground: string,
+): number {
+  const background = settings.transparentBackground
+    ? DEFAULT_TRANSPARENT_BACKGROUND_COLOR
+    : settings.background;
+  const targetRgb = parseColor(target);
+  const backgroundRgb = parseColor(background);
+  const foregroundRgb = parseColor(foreground);
+  if (!targetRgb || !backgroundRgb || !foregroundRgb) {
+    return 0;
+  }
+
+  const blend = clamp01(candidate.features.density);
+  return rgbDistance(targetRgb, {
+    red: backgroundRgb.red * (1 - blend) + foregroundRgb.red * blend,
+    green: backgroundRgb.green * (1 - blend) + foregroundRgb.green * blend,
+    blue: backgroundRgb.blue * (1 - blend) + foregroundRgb.blue * blend,
+  });
 }
 
 function blendColors(first: string, second: string, amount: number): string {
@@ -189,6 +225,13 @@ function parseColor(color: string): RgbColor | null {
   const parsed = parseHexColor(color) ?? parseHslColor(color);
   rgbCache.set(color, parsed);
   return parsed;
+}
+
+function rgbDistance(first: RgbColor, second: RgbColor): number {
+  const red = (first.red - second.red) / 255;
+  const green = (first.green - second.green) / 255;
+  const blue = (first.blue - second.blue) / 255;
+  return Math.sqrt(red * red + green * green + blue * blue) / Math.sqrt(3);
 }
 
 function parseHexColor(color: string): RgbColor | null {
@@ -242,4 +285,8 @@ function parseHslColor(color: string): RgbColor | null {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clampColorInfluence(value: number): number {
+  return Math.max(0, Math.min(2, Number.isFinite(value) ? value : 1));
 }
