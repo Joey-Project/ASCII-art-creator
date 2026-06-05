@@ -9,7 +9,7 @@ import type {
 import { FeatureIndex } from "./feature-index";
 import { clamp01, cloneFeatureWithDensity } from "./features";
 import { buildGlyphCandidates } from "./glyph-sampler";
-import { colorForCell } from "./colors";
+import { colorAwareCandidateScore, colorForCell } from "./colors";
 import { extractSourceCellFeatures, type ImageSource } from "./source-image";
 
 export interface GenerateMosaicInput {
@@ -49,6 +49,14 @@ export async function generateMosaic(input: GenerateMosaicInput): Promise<Mosaic
     const candidate = index.query(targetFeature, {
       densityWindow: settings.densityWindow,
       useEdgeMatching: settings.useEdgeMatching,
+      scoreCandidate: (candidate, featureScore) =>
+        colorAwareCandidateScore(
+          settings,
+          settings.colorStrategy,
+          sourceCell,
+          candidate,
+          featureScore,
+        ),
     });
 
     if (settings.useDithering) {

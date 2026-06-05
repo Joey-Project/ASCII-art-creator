@@ -4,6 +4,7 @@ import { featureDistance } from "./features";
 export interface FeatureIndexOptions {
   densityWindow: number;
   useEdgeMatching: boolean;
+  scoreCandidate?: (candidate: GlyphCandidate, featureScore: number) => number;
 }
 
 export class FeatureIndex {
@@ -39,7 +40,8 @@ export class FeatureIndex {
     let bestScore = Number.POSITIVE_INFINITY;
 
     for (const candidate of pool) {
-      const score = featureDistance(target, candidate.features, options.useEdgeMatching);
+      const featureScore = featureDistance(target, candidate.features, options.useEdgeMatching);
+      const score = options.scoreCandidate?.(candidate, featureScore) ?? featureScore;
       if (score < bestScore) {
         best = candidate;
         bestScore = score;
