@@ -512,6 +512,36 @@ test("fits portrait mobile previews to the available width", async ({ page, isMo
   expect(canvas!.width).toBeGreaterThan(frame!.width - 32);
 });
 
+test("refits mobile previews after viewport height shrinks", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "mobile project only");
+
+  await page.setViewportSize({ width: 390, height: 1100 });
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "portrait.svg",
+    mimeType: "image/svg+xml",
+    buffer: portraitSvgBuffer(),
+  });
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.getByRole("button", { name: "Fit preview" }).click();
+  const tallCanvas = await page.locator("#preview-canvas").boundingBox();
+  expect(tallCanvas).not.toBeNull();
+
+  await page.setViewportSize({ width: 390, height: 500 });
+  await expect
+    .poll(async () => {
+      const frame = await page.locator(".preview-frame").boundingBox();
+      const canvas = await page.locator("#preview-canvas").boundingBox();
+      return frame && canvas ? canvas.height <= frame.height + 1 : false;
+    })
+    .toBe(true);
+  const shortCanvas = await page.locator("#preview-canvas").boundingBox();
+  expect(shortCanvas).not.toBeNull();
+  expect(shortCanvas!.height).toBeLessThan(tallCanvas!.height);
+});
+
 async function statNumber(page: Page, selector: string): Promise<number> {
   const text = await page.locator(selector).textContent();
   const match = text?.match(/\d[\d,]*/);

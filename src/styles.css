@@ -479,8 +479,8 @@ input[type="file"] {
   }
 
   .workspace {
-    min-height: 100vh;
-    min-height: 100svh;
+    height: 100vh;
+    height: 100svh;
   }
 }
 
