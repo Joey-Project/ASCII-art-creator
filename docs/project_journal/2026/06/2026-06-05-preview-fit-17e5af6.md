@@ -36,6 +36,6 @@ superseded_by:
 
 - Validation: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`
 - Unit coverage: 8 files / 43 tests passed
-- E2E coverage: 31 passed / 4 skipped across desktop and mobile projects
+- E2E coverage: 31 passed / 5 skipped across desktop and mobile projects
 - Manual mobile probe with `/Users/hoteng/Downloads/Hatsune_miku_v2.png` at 390x844: preview frame increased from about 362x417 to 362x670, canvas increased from about 262x391 to 344x514, and Fit increased from 30% to 39%.
 - Manual mobile resize probe with the same image at 390x1100 then 390x500: before the fixed-height workspace change, the shrunken viewport still left the workspace at about 706px high; after the change, workspace height followed 500px and ResizeObserver refit the canvas from about 344x514 to 206x308.
