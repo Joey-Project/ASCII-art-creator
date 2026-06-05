@@ -5,9 +5,10 @@ import type {
   ProgressCallback,
   RenderSettings,
 } from "../domain/types";
-import { FEATURE_SIZE, extractFeatureFromDarkness } from "./features";
+import { FEATURE_SIZE, clamp01, extractFeatureFromDarkness } from "./features";
 import { canvasFont } from "./canvas";
 import { isAsciiGrapheme } from "./graphemes";
+import { rgbToHex } from "./colors";
 
 const MISSING_GLYPH_SENTINELS = ["\u{10ffff}", "\uffff", "\ufffe"];
 const FALLBACK_FAMILIES = ["sans-serif", "serif", "monospace"];
@@ -19,7 +20,14 @@ const GENERIC_FAMILIES = new Set([
   "fantasy",
   "system-ui",
 ]);
+const MIN_INTRINSIC_VISIBLE_ALPHA = 0.01;
+const MIN_INTRINSIC_COLOR_STRENGTH = 0.08;
 const fallbackSignatureCache = new Map<string, Set<string>>();
+
+export interface IntrinsicGlyphColor {
+  color: string;
+  strength: number;
+}
 
 interface RenderedGlyph {
   candidate: GlyphCandidate;
@@ -142,6 +150,8 @@ function renderGlyphWithFamily(
     signatureBits.push(values[index] > 0.02 ? "1" : "0");
   }
 
+  const intrinsicColor = measureIntrinsicGlyphColor(imageData.data);
+
   return {
     candidate: {
       id: `${glyph}:${fontId}:${weight}`,
@@ -152,8 +162,57 @@ function renderGlyphWithFamily(
       fontDataUrl,
       weight,
       features: extractFeatureFromDarkness(values),
+      intrinsicColor: intrinsicColor?.color,
+      intrinsicColorStrength: intrinsicColor?.strength,
     },
     signature: signatureBits.join(""),
+  };
+}
+
+export function measureIntrinsicGlyphColor(data: Uint8ClampedArray): IntrinsicGlyphColor | null {
+  let alphaSum = 0;
+  let redSum = 0;
+  let greenSum = 0;
+  let blueSum = 0;
+  let luminanceSignal = 0;
+  let chromaSignal = 0;
+
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const alpha = data[offset + 3] / 255;
+    if (alpha <= 0) {
+      continue;
+    }
+
+    const red = data[offset];
+    const green = data[offset + 1];
+    const blue = data[offset + 2];
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+
+    alphaSum += alpha;
+    redSum += red * alpha;
+    greenSum += green * alpha;
+    blueSum += blue * alpha;
+    luminanceSignal += ((0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255) * alpha;
+    chromaSignal += ((max - min) / 255) * alpha;
+  }
+
+  const pixelCount = data.length / 4;
+  if (pixelCount === 0 || alphaSum / pixelCount < MIN_INTRINSIC_VISIBLE_ALPHA) {
+    return null;
+  }
+
+  const red = redSum / alphaSum;
+  const green = greenSum / alphaSum;
+  const blue = blueSum / alphaSum;
+  const strength = Math.max(luminanceSignal / alphaSum, chromaSignal / alphaSum);
+  if (strength < MIN_INTRINSIC_COLOR_STRENGTH) {
+    return null;
+  }
+
+  return {
+    color: rgbToHex(red, green, blue),
+    strength: clamp01(strength),
   };
 }
 

@@ -6,6 +6,7 @@ import type {
 } from "../domain/types";
 
 const COLOR_AWARE_SELECTION_WEIGHT = 1.45;
+const FULL_INTRINSIC_COLOR_STRENGTH = 0.85;
 const stringColorCache = new Map<string, string>();
 const rgbCache = new Map<string, RgbColor | null>();
 
@@ -108,6 +109,22 @@ function colorForCandidateSelection(
     return null;
   }
 
+  const intrinsicColor = candidate.intrinsicColor;
+  const intrinsicStrength = Math.max(0, Math.min(1, candidate.intrinsicColorStrength ?? 0));
+  const assignedColor = assignedCandidateColor(strategy, candidate);
+
+  if (intrinsicColor && intrinsicStrength > 0) {
+    if (!assignedColor || intrinsicStrength >= FULL_INTRINSIC_COLOR_STRENGTH) {
+      return intrinsicColor;
+    }
+
+    return blendColors(assignedColor, intrinsicColor, intrinsicStrength);
+  }
+
+  return assignedColor;
+}
+
+function assignedCandidateColor(strategy: ColorStrategy, candidate: GlyphCandidate): string | null {
   switch (strategy) {
     case "glyph":
       return colorFromString(candidate.glyph);
@@ -120,6 +137,21 @@ function colorForCandidateSelection(
     default:
       return null;
   }
+}
+
+function blendColors(first: string, second: string, amount: number): string | null {
+  const firstRgb = parseColor(first);
+  const secondRgb = parseColor(second);
+  if (!firstRgb || !secondRgb) {
+    return second;
+  }
+
+  const blend = clamp01(amount);
+  return rgbToHex(
+    firstRgb.red * (1 - blend) + secondRgb.red * blend,
+    firstRgb.green * (1 - blend) + secondRgb.green * blend,
+    firstRgb.blue * (1 - blend) + secondRgb.blue * blend,
+  );
 }
 
 function parseColor(color: string): RgbColor | null {

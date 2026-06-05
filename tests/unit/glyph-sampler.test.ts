@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   glyphFeatureFontSize,
+  measureIntrinsicGlyphColor,
   shouldFilterAgainstFallbackSignatures,
 } from "../../src/core/glyph-sampler";
 
@@ -28,5 +29,20 @@ describe("glyph sampler", () => {
     expect(
       shouldFilterAgainstFallbackSignatures("中", { family: "sans-serif", source: "builtin" }),
     ).toBe(false);
+  });
+
+  it("ignores monochrome black glyph samples as intrinsic color", () => {
+    const data = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+    expect(measureIntrinsicGlyphColor(data)).toBeNull();
+  });
+
+  it("measures alpha-weighted intrinsic color from rendered samples", () => {
+    const data = new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const measured = measureIntrinsicGlyphColor(data);
+
+    expect(measured).not.toBeNull();
+    expect(measured?.color).toBe("#aa0055");
+    expect(measured?.strength).toBeGreaterThan(0.6);
   });
 });

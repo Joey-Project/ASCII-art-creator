@@ -71,6 +71,8 @@ export interface GlyphCandidate {
   fontDataUrl?: string;
   weight: number;
   features: GlyphFeature;
+  intrinsicColor?: string;
+  intrinsicColorStrength?: number;
 }
 
 export interface SourceCellFeature {
@@ -87,6 +89,8 @@ export interface MosaicCell {
   fontSource: FontSource;
   fontDataUrl?: string;
   weight: number;
+  intrinsicColor?: string;
+  intrinsicColorStrength?: number;
   foreground: string;
   background: string;
   sourceColor: string;

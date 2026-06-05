@@ -75,6 +75,8 @@ export async function generateMosaic(input: GenerateMosaicInput): Promise<Mosaic
       fontSource: candidate.fontSource,
       fontDataUrl: candidate.fontDataUrl,
       weight: candidate.weight,
+      intrinsicColor: candidate.intrinsicColor,
+      intrinsicColorStrength: candidate.intrinsicColorStrength,
       foreground: colorForCell(settings, settings.colorStrategy, sourceCell, candidate),
       background: settings.background,
       sourceColor: sourceCell.sourceColor,

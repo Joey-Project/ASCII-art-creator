@@ -54,6 +54,7 @@ Rules:
 - Segment user input with `Intl.Segmenter` when available, with a grapheme-safe fallback.
 - Deduplicate candidates after segmentation.
 - Render-test each candidate and exclude empty or unsupported glyphs for a font/weight pair.
+- Preserve intrinsic rendered color for candidates whose browser/native glyph rendering is not purely recolorable, especially emoji.
 - Cache measured features per candidate and invalidate only when glyphs, fonts, weights, or cell metrics change.
 - Keep ASCII as the only default pack. Enable broader Unicode only by user input or explicit pack selection.
 
@@ -67,14 +68,14 @@ Both source cells and glyph candidates should use comparable features:
 - Local contrast to keep outlines legible.
 - Optional dithering, such as Floyd-Steinberg style error diffusion over density, to simulate additional gray levels.
 
-For color output, glyph selection should still express lightness and texture, while foreground color can come from source image sampling or user-selected grouping rules. When the user chooses grouped color strategies (`glyph`, `font`, or `glyph + font + weight`), the matcher adds a bounded RGB-distance penalty between the source cell's average color and the candidate's grouped foreground color. This lets strong color changes steer the cell toward a different candidate without disabling the density bucket prefilter or replacing the shape score.
+For color output, glyph selection should still express lightness and texture, while foreground color can come from source image sampling or user-selected grouping rules. When the user chooses grouped color strategies (`glyph`, `font`, or `glyph + font + weight`), the matcher adds a bounded RGB-distance penalty between the source cell's average color and the candidate's grouped foreground color. This lets strong color changes steer the cell toward a different candidate without disabling the density bucket prefilter or replacing the shape score. Intrinsic colored glyphs use their sampled native color as the candidate color signal; strong native color, such as color emoji, overrides app-assigned grouping color for scoring because browser rendering may ignore `fillStyle`.
 
 ## Performance Strategy
 
 Feature extraction and matching should run in Web Workers once the library or grid becomes large. The initial matching path should use a staged search:
 
 - Bucket candidates by brightness/density and only compare nearby buckets.
-- Within buckets, rank by weighted feature distance, optionally plus grouped-color distance.
+- Within buckets, rank by weighted feature distance, optionally plus grouped-color or intrinsic-glyph color distance.
 - Add KD-tree or approximate nearest-neighbor indexing when candidate count makes bucket search too slow.
 - Use progressive rendering so the preview can update quickly before the full-resolution export grid completes.
 
@@ -90,7 +91,7 @@ Supported color strategies:
 - By font: assign colors by font family; candidate selection also prefers font colors closer to the source cell average color.
 - By glyph-font combination: assign colors by the full `glyph + font + weight` candidate; candidate selection also prefers grouped colors closer to the source cell average color.
 
-Intrinsic colored glyphs such as emoji are still treated as shape/alpha candidates in this stage. Sampling and matching their rendered color is tracked separately because it requires preserving candidate color features during glyph sampling, not only scoring app-assigned foreground colors.
+Source and uniform color strategies remain feature-only for normally recolorable glyphs because all candidates can receive the same app-assigned foreground color. Candidates with intrinsic native color are the exception: their sampled color is compared with the source cell average so mismatched emoji are penalized and matching emoji can stay competitive. Mono mode remains feature-only; intrinsic color is detected but does not alter grayscale matching.
 
 Background color is configurable. Transparent background is allowed for PNG/SVG when the selected export path supports it.
 
