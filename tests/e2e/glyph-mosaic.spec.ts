@@ -366,6 +366,32 @@ test("fits small desktop previews up to the available frame", async ({ page, isM
   expect(Math.min(frame!.width - canvas!.width, frame!.height - canvas!.height)).toBeLessThan(40);
 });
 
+test("requires regeneration when grouped color scoring settings change", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Color" }).click();
+  await expect(page.locator("#status")).toContainText("Visual settings updated");
+  const sourceColorPreview = await previewCanvasDataUrl(page);
+
+  await page.getByLabel("Color strategy").selectOption("glyph");
+  await expect.poll(() => previewCanvasDataUrl(page)).not.toBe(sourceColorPreview);
+  await expect(page.locator("#status")).toContainText("Settings changed");
+  await page.getByRole("button", { name: "TXT" }).click();
+  await expect(page.locator("#status")).toContainText(
+    "Regenerate the mosaic before exporting structural changes",
+  );
+
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const glyphColorPreview = await previewCanvasDataUrl(page);
+  await page.getByLabel("Color strategy").selectOption("source");
+  await expect.poll(() => previewCanvasDataUrl(page)).not.toBe(glyphColorPreview);
+  await expect(page.locator("#status")).toContainText("Settings changed");
+});
+
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("User glyphs").fill("漢字🙂");
@@ -611,6 +637,12 @@ async function waitForFirstDelayedBlobLoad(page: Page): Promise<void> {
     undefined,
     { timeout: 5_000 },
   );
+}
+
+async function previewCanvasDataUrl(page: Page): Promise<string> {
+  return page
+    .locator("#preview-canvas")
+    .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL("image/png"));
 }
 
 async function mockLocalFontAccess(page: Page): Promise<void> {

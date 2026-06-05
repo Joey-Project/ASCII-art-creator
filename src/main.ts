@@ -557,19 +557,22 @@ function bindControls(): void {
   });
 
   getElement<HTMLButtonElement>("mono-mode").addEventListener("click", () => {
-    state.settings.colorMode = "mono";
-    syncColorModeButtons();
-    applyVisualSettingsToMosaic();
+    applyColorSelectionChange(() => {
+      state.settings.colorMode = "mono";
+      syncColorModeButtons();
+    });
   });
   getElement<HTMLButtonElement>("color-mode").addEventListener("click", () => {
-    state.settings.colorMode = "color";
-    syncColorModeButtons();
-    applyVisualSettingsToMosaic();
+    applyColorSelectionChange(() => {
+      state.settings.colorMode = "color";
+      syncColorModeButtons();
+    });
   });
   getElement<HTMLSelectElement>("color-strategy").addEventListener("change", (event) => {
-    state.settings.colorStrategy = (event.target as HTMLSelectElement)
-      .value as RenderSettings["colorStrategy"];
-    applyVisualSettingsToMosaic();
+    applyColorSelectionChange(() => {
+      state.settings.colorStrategy = (event.target as HTMLSelectElement)
+        .value as RenderSettings["colorStrategy"];
+    });
   });
   getElement<HTMLInputElement>("foreground").addEventListener("input", (event) => {
     state.settings.foreground = (event.target as HTMLInputElement).value;
@@ -1688,6 +1691,35 @@ function visualForegroundForCell(cell: Mosaic["cells"][number], settings: Render
       return colorFromString(`${cell.glyph}:${cell.fontFamily}:${cell.weight}`);
     default:
       return settings.foreground;
+  }
+}
+
+function applyColorSelectionChange(update: () => void): void {
+  const previousSelectionKey = candidateColorSelectionKey(state.settings);
+  update();
+  const nextSelectionKey = candidateColorSelectionKey(state.settings);
+
+  if (previousSelectionKey !== nextSelectionKey) {
+    applyVisualSettingsToMosaic();
+    markNeedsRegenerate();
+    return;
+  }
+
+  applyVisualSettingsToMosaic();
+}
+
+function candidateColorSelectionKey(settings: RenderSettings): string {
+  if (settings.colorMode !== "color") {
+    return "feature-only";
+  }
+
+  switch (settings.colorStrategy) {
+    case "glyph":
+    case "font":
+    case "glyph-font":
+      return `grouped:${settings.colorStrategy}`;
+    default:
+      return "feature-only";
   }
 }
 
