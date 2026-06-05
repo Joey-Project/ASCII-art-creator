@@ -177,6 +177,53 @@ describe("glyph sampler", () => {
     expect(candidates).toEqual([]);
     expect(fillStyles).not.toContain("#ff00ff");
   });
+
+  it("skips intrinsic-color probe sampling for accepted mono glyphs", async () => {
+    const fillStyles: string[] = [];
+    let currentGlyph = "";
+    const context = {
+      fillStyle: "",
+      textAlign: "",
+      textBaseline: "",
+      font: "",
+      clearRect: vi.fn(),
+      fillText: vi.fn((glyph: string) => {
+        currentGlyph = glyph;
+        fillStyles.push(context.fillStyle);
+      }),
+      getImageData: vi.fn(() => ({
+        data: imageDataForGlyph(currentGlyph),
+      })),
+    };
+
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({
+        width: 0,
+        height: 0,
+        getContext: vi.fn(() => context),
+      })),
+    });
+
+    const candidates = await buildGlyphCandidates(
+      ["字"],
+      [
+        {
+          id: "local-demo",
+          family: "Local Demo",
+          label: "Local Demo",
+          source: "local",
+          selected: true,
+          weights: [400],
+        },
+      ],
+      { ...sampleSettings, colorMode: "mono" },
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].intrinsicColor).toBeUndefined();
+    expect(candidates[0].intrinsicColorStrength).toBeUndefined();
+    expect(fillStyles).not.toContain("#ff00ff");
+  });
 });
 
 const sampleSettings: RenderSettings = {

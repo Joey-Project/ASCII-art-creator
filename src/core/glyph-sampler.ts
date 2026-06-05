@@ -67,7 +67,11 @@ export async function buildGlyphCandidates(
         if (
           isRenderableGlyph(glyph, font, weight, sampleFontSize, rendered, missingGlyphSignatures)
         ) {
-          candidates.push(withIntrinsicGlyphColor(rendered, sampleFontSize));
+          candidates.push(
+            settings.colorMode === "color"
+              ? withIntrinsicGlyphColor(rendered, sampleFontSize)
+              : rendered.candidate,
+          );
         }
 
         if (completed % 64 === 0) {
