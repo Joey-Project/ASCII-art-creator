@@ -1,6 +1,6 @@
 import type { GlyphFeature, SourceCellFeature } from "../domain/types";
 import { FEATURE_SIZE, clamp01, extractFeatureFromDarkness } from "./features";
-import { rgbToHex } from "./colors";
+import { linearChannelToSrgbByte, linearRgbToHex, srgbByteToLinear } from "./colors";
 
 export type ImageSource = HTMLImageElement | HTMLCanvasElement | ImageBitmap;
 
@@ -107,9 +107,9 @@ function extractSingleCell(
       const sampleRed = imageData.data[offset];
       const sampleGreen = imageData.data[offset + 1];
       const sampleBlue = imageData.data[offset + 2];
-      const composited = compositeOnWhite(sampleRed, sampleGreen, sampleBlue, alpha);
+      const composited = compositeOnWhiteLinear(sampleRed, sampleGreen, sampleBlue, alpha);
       const luminance =
-        (0.2126 * composited.red + 0.7152 * composited.green + 0.0722 * composited.blue) / 255;
+        0.2126 * composited.red + 0.7152 * composited.green + 0.0722 * composited.blue;
       values[y * FEATURE_SIZE + x] = clamp01(1 - luminance);
       red += composited.red;
       green += composited.green;
@@ -120,7 +120,7 @@ function extractSingleCell(
 
   return {
     feature: extractFeatureFromDarkness(values),
-    color: rgbToHex(red / count, green / count, blue / count),
+    color: linearRgbToHex(red / count, green / count, blue / count),
   };
 }
 
@@ -130,10 +130,24 @@ export function compositeOnWhite(
   blue: number,
   alpha: number,
 ): { red: number; green: number; blue: number } {
+  const composited = compositeOnWhiteLinear(red, green, blue, alpha);
+  return {
+    red: linearChannelToSrgbByte(composited.red),
+    green: linearChannelToSrgbByte(composited.green),
+    blue: linearChannelToSrgbByte(composited.blue),
+  };
+}
+
+function compositeOnWhiteLinear(
+  red: number,
+  green: number,
+  blue: number,
+  alpha: number,
+): { red: number; green: number; blue: number } {
   const clampedAlpha = clamp01(alpha);
   return {
-    red: red * clampedAlpha + 255 * (1 - clampedAlpha),
-    green: green * clampedAlpha + 255 * (1 - clampedAlpha),
-    blue: blue * clampedAlpha + 255 * (1 - clampedAlpha),
+    red: srgbByteToLinear(red) * clampedAlpha + (1 - clampedAlpha),
+    green: srgbByteToLinear(green) * clampedAlpha + (1 - clampedAlpha),
+    blue: srgbByteToLinear(blue) * clampedAlpha + (1 - clampedAlpha),
   };
 }

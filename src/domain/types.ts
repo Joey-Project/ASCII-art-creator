@@ -19,6 +19,7 @@ export interface RenderSettings {
   outputScale: number;
   colorMode: ColorMode;
   colorStrategy: ColorStrategy;
+  colorInfluence: number;
   foreground: string;
   background: string;
   transparentBackground: boolean;

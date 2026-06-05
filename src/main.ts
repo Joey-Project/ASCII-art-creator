@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS: RenderSettings = {
   outputScale: 2,
   colorMode: "mono",
   colorStrategy: "source",
+  colorInfluence: 1,
   foreground: "#1f2528",
   background: "#f8f5ea",
   transparentBackground: false,
@@ -279,6 +280,11 @@ app.innerHTML = `
             <option value="font">By font</option>
             <option value="glyph-font">By glyph x font</option>
           </select>
+        </label>
+        <label>
+          Color influence
+          <input id="color-influence" type="range" min="0" max="2" step="0.05" value="${state.settings.colorInfluence}" />
+          <span id="color-influence-output" class="value-output">${formatColorInfluence(state.settings.colorInfluence)}</span>
         </label>
         <label>
           Foreground
@@ -574,17 +580,26 @@ function bindControls(): void {
         .value as RenderSettings["colorStrategy"];
     });
   });
+  getElement<HTMLInputElement>("color-influence").addEventListener("input", (event) => {
+    applyColorSelectionChange(() => {
+      state.settings.colorInfluence = Number((event.target as HTMLInputElement).value);
+      syncColorInfluenceOutput();
+    });
+  });
   getElement<HTMLInputElement>("foreground").addEventListener("input", (event) => {
-    state.settings.foreground = (event.target as HTMLInputElement).value;
-    applyVisualSettingsToMosaic();
+    applyColorSelectionChange(() => {
+      state.settings.foreground = (event.target as HTMLInputElement).value;
+    });
   });
   getElement<HTMLInputElement>("background").addEventListener("input", (event) => {
-    state.settings.background = (event.target as HTMLInputElement).value;
-    applyVisualSettingsToMosaic();
+    applyColorSelectionChange(() => {
+      state.settings.background = (event.target as HTMLInputElement).value;
+    });
   });
   getElement<HTMLInputElement>("transparent").addEventListener("change", (event) => {
-    state.settings.transparentBackground = (event.target as HTMLInputElement).checked;
-    applyVisualSettingsToMosaic();
+    applyColorSelectionChange(() => {
+      state.settings.transparentBackground = (event.target as HTMLInputElement).checked;
+    });
   });
   getElement<HTMLInputElement>("output-scale").addEventListener(
     "input",
@@ -1452,6 +1467,8 @@ function syncUiFromState(): void {
   getElement<HTMLInputElement>("font-search").value = state.fontSearch;
   getElement<HTMLInputElement>("font-exact-match").checked = state.fontExactMatch;
   getElement<HTMLSelectElement>("grid-mode").value = state.settings.gridMode;
+  getElement<HTMLInputElement>("color-influence").value = String(state.settings.colorInfluence);
+  syncColorInfluenceOutput();
   syncColorModeButtons();
   syncGridMode();
   syncEditSourceButton();
@@ -1474,6 +1491,16 @@ function syncColorModeButtons(): void {
     "active",
     state.settings.colorMode === "color",
   );
+}
+
+function syncColorInfluenceOutput(): void {
+  getElement<HTMLSpanElement>("color-influence-output").textContent = formatColorInfluence(
+    state.settings.colorInfluence,
+  );
+}
+
+function formatColorInfluence(value: number): string {
+  return `${clampColorInfluence(value).toFixed(2)}x`;
 }
 
 async function generate(): Promise<void> {
@@ -1709,18 +1736,23 @@ function applyColorSelectionChange(update: () => void): void {
 }
 
 function candidateColorSelectionKey(settings: RenderSettings): string {
-  if (settings.colorMode !== "color") {
+  const colorInfluence = clampColorInfluence(settings.colorInfluence);
+  if (settings.colorMode !== "color" || colorInfluence === 0) {
     return "feature-only";
   }
 
+  const backgroundKey = settings.transparentBackground ? "transparent" : settings.background;
+  const commonKey = `${colorInfluence.toFixed(2)}:${backgroundKey}`;
+
   switch (settings.colorStrategy) {
     case "source":
+      return `source:${commonKey}`;
     case "uniform":
-      return "intrinsic-color";
+      return `uniform:${commonKey}:${settings.foreground}`;
     case "glyph":
     case "font":
     case "glyph-font":
-      return `grouped:${settings.colorStrategy}`;
+      return `grouped:${settings.colorStrategy}:${commonKey}`;
     default:
       return "feature-only";
   }
@@ -1777,6 +1809,10 @@ function setStatus(message: string): void {
 
 function setOutput(id: string, value: number): void {
   getElement<HTMLSpanElement>(id).textContent = String(value);
+}
+
+function clampColorInfluence(value: number): number {
+  return Math.max(0, Math.min(2, Number.isFinite(value) ? value : 1));
 }
 
 function numberSetting(key: keyof RenderSettings): (event: Event) => void {

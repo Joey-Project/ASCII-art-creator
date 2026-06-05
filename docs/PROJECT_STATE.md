@@ -9,7 +9,7 @@
 
 ## Recovery Pointers
 
-- Latest completed workstream: `docs/project_journal/2026/06/2026-06-03-source-image-editor-59fb6c9.md`
+- Latest completed workstream: `docs/project_journal/2026/06/2026-06-05-color-scoring-v2-f27cf9b.md`
 - Design entrypoint: `docs/design/architecture.md`
 - Local journal index, if needed, should be generated locally as `docs/project_journal/INDEX.md` and not committed.
 

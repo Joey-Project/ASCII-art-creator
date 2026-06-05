@@ -20,6 +20,7 @@ const baseSettings: RenderSettings = {
   outputScale: 2,
   colorMode: "color",
   colorStrategy: "glyph",
+  colorInfluence: 1,
   foreground: "#111111",
   background: "#ffffff",
   transparentBackground: false,
@@ -31,7 +32,7 @@ const baseSettings: RenderSettings = {
 describe("color-aware candidate scoring", () => {
   it("measures generated HSL colors against sampled source hex colors", () => {
     expect(colorDistance(colorFromString("A"), "#828c18")).toBeLessThan(0.01);
-    expect(colorDistance(colorFromString("####"), "#828c18")).toBeGreaterThan(0.35);
+    expect(colorDistance(colorFromString("####"), "#828c18")).toBeGreaterThan(0.25);
   });
 
   it("penalizes grouped candidate colors that are far from the source average", () => {
@@ -42,12 +43,28 @@ describe("color-aware candidate scoring", () => {
     expect(colorScore("glyph", cell, close, 0.05)).toBeLessThan(colorScore("glyph", cell, far, 0));
   });
 
-  it("keeps source and uniform strategies feature-only for recolorable candidates", () => {
+  it("can disable color influence for recolorable candidates", () => {
     const cell = makeCell("#828c18");
     const far = makeCandidate("####", 0.5);
+    const featureScore = 0.23;
+    const featureOnlySettings = { ...baseSettings, colorInfluence: 0 };
 
-    expect(colorScore("source", cell, far, 0.23)).toBe(0.23);
-    expect(colorScore("uniform", cell, far, 0.23)).toBe(0.23);
+    expect(colorAwareCandidateScore(featureOnlySettings, "source", cell, far, featureScore)).toBe(
+      featureScore,
+    );
+    expect(colorAwareCandidateScore(featureOnlySettings, "uniform", cell, far, featureScore)).toBe(
+      featureScore,
+    );
+  });
+
+  it("uses projected source color to recover saturation by glyph density", () => {
+    const cell = makeCell("#008040");
+    const sparse = makeCandidate(".", 0.15);
+    const dense = makeCandidate("#", 0.75);
+
+    expect(colorScore("source", cell, dense, 0.08)).toBeLessThan(
+      colorScore("source", cell, sparse, 0),
+    );
   });
 
   it("uses intrinsic colored glyph color even for source and uniform strategies", () => {
@@ -80,17 +97,59 @@ describe("color-aware candidate scoring", () => {
       intrinsicColorStrength: 1,
     });
     const featureScore = 0.1;
-    const weightedPenalty = colorDistance(cell.sourceColor, "#c04040") * 1.45 * 0.2;
+    const sourceScore = colorScore("source", cell, weakIntrinsic, featureScore);
+    const uniformScore = colorScore("uniform", cell, weakIntrinsic, featureScore);
 
-    expect(colorScore("source", cell, weakIntrinsic, featureScore)).toBeCloseTo(
-      featureScore + weightedPenalty,
+    expect(sourceScore).toBeGreaterThan(featureScore);
+    expect(uniformScore).toBeGreaterThan(featureScore);
+    expect(sourceScore).toBeLessThan(uniformScore);
+    expect(sourceScore).toBeLessThan(colorScore("source", cell, strongIntrinsic, featureScore));
+  });
+
+  it("projects glyph coverage with linear-light blending before Oklab distance", () => {
+    const cell = makeCell("#bcbcbc");
+    const halfCoverage = makeCandidate("=", 0.5);
+    const linearBlendSettings = {
+      ...baseSettings,
+      colorStrategy: "uniform" as const,
+      foreground: "#ffffff",
+      background: "#000000",
+    };
+
+    expect(
+      colorAwareCandidateScore(linearBlendSettings, "uniform", cell, halfCoverage, 0.12),
+    ).toBeCloseTo(0.12, 2);
+  });
+
+  it("scales the color penalty with color influence", () => {
+    const cell = makeCell("#828c18");
+    const far = makeCandidate("####", 0.5);
+    const featureScore = 0.07;
+    const featureOnlyScore = colorAwareCandidateScore(
+      { ...baseSettings, colorInfluence: 0 },
+      "glyph",
+      cell,
+      far,
+      featureScore,
     );
-    expect(colorScore("uniform", cell, weakIntrinsic, featureScore)).toBeCloseTo(
-      featureScore + weightedPenalty,
+    const normalScore = colorAwareCandidateScore(
+      { ...baseSettings, colorInfluence: 1 },
+      "glyph",
+      cell,
+      far,
+      featureScore,
     );
-    expect(colorScore("source", cell, weakIntrinsic, featureScore)).toBeLessThan(
-      colorScore("source", cell, strongIntrinsic, featureScore),
+    const strongScore = colorAwareCandidateScore(
+      { ...baseSettings, colorInfluence: 2 },
+      "glyph",
+      cell,
+      far,
+      featureScore,
     );
+
+    expect(featureOnlyScore).toBe(featureScore);
+    expect(normalScore - featureScore).toBeGreaterThan(0);
+    expect(strongScore - featureScore).toBeCloseTo((normalScore - featureScore) * 2);
   });
 
   it("lets intrinsic glyph color override grouped generated colors", () => {

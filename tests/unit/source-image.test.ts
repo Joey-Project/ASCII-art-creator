@@ -3,14 +3,18 @@ import { compositeOnWhite } from "../../src/core/source-image";
 
 describe("source image sampling", () => {
   it("treats transparent pixels as white background during analysis", () => {
-    expect(compositeOnWhite(0, 0, 0, 0)).toEqual({ red: 255, green: 255, blue: 255 });
+    const composited = compositeOnWhite(0, 0, 0, 0);
+
+    expect(composited.red).toBeCloseTo(255);
+    expect(composited.green).toBeCloseTo(255);
+    expect(composited.blue).toBeCloseTo(255);
   });
 
   it("alpha-composites partial transparency before color and density analysis", () => {
-    expect(compositeOnWhite(0, 0, 0, 0.5)).toEqual({
-      red: 127.5,
-      green: 127.5,
-      blue: 127.5,
-    });
+    const composited = compositeOnWhite(0, 0, 0, 0.5);
+
+    expect(composited.red).toBeCloseTo(187.52, 2);
+    expect(composited.green).toBeCloseTo(187.52, 2);
+    expect(composited.blue).toBeCloseTo(187.52, 2);
   });
 });
