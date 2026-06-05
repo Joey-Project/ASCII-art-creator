@@ -55,6 +55,7 @@ Rules:
 - Deduplicate candidates after segmentation.
 - Render-test each candidate and exclude empty or unsupported glyphs for a font/weight pair.
 - Preserve intrinsic rendered color for candidates whose browser/native glyph rendering is not purely recolorable, especially emoji. Detection uses the normal black glyph sample plus a high-saturation probe render for weak-color or non-ASCII no-signal samples, so dark or desaturated native glyphs are not mistaken for recolorable black text while default ASCII sampling avoids the extra probe.
+- Keep fallback-missing-glyph signatures on a signature-only render path. Fallback comparison only needs alpha occupancy, so it must not perform intrinsic-color sampling or probe renders.
 - Cache measured features per candidate and invalidate only when glyphs, fonts, weights, or cell metrics change.
 - Keep ASCII as the only default pack. Enable broader Unicode only by user input or explicit pack selection.
 

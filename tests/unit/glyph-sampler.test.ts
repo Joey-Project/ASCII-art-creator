@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  fallbackSignaturesFor,
   glyphFeatureFontSize,
   measureIntrinsicGlyphColor,
   shouldProbeIntrinsicGlyphColor,
@@ -7,6 +8,10 @@ import {
 } from "../../src/core/glyph-sampler";
 
 describe("glyph sampler", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("maps UI font size onto the normalized glyph feature canvas", () => {
     expect(glyphFeatureFontSize({ fontSize: 14, cellHeight: 16 })).toBe(16);
     expect(glyphFeatureFontSize({ fontSize: 28, cellHeight: 14 })).toBe(36);
@@ -95,5 +100,34 @@ describe("glyph sampler", () => {
     expect(shouldProbeIntrinsicGlyphColor("🖤", null)).toBe(true);
     expect(shouldProbeIntrinsicGlyphColor("A", { color: "#402020", strength: 0.2 })).toBe(true);
     expect(shouldProbeIntrinsicGlyphColor("A", { color: "#ff0000", strength: 0.95 })).toBe(false);
+  });
+
+  it("renders fallback signatures without intrinsic-color probe samples", () => {
+    const fillStyles: string[] = [];
+    const context = {
+      fillStyle: "",
+      textAlign: "",
+      textBaseline: "",
+      font: "",
+      clearRect: vi.fn(),
+      fillText: vi.fn(() => {
+        fillStyles.push(context.fillStyle);
+      }),
+      getImageData: vi.fn(() => ({
+        data: new Uint8ClampedArray(18 * 18 * 4),
+      })),
+    };
+
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({
+        width: 0,
+        height: 0,
+        getContext: vi.fn(() => context),
+      })),
+    });
+
+    fallbackSignaturesFor("仮", 400, 18);
+
+    expect(fillStyles).toEqual(["#000000", "#000000", "#000000"]);
   });
 });

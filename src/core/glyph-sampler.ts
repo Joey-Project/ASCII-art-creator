@@ -128,23 +128,15 @@ function renderGlyphWithFamily(
   fontSource: FontSource,
   fontDataUrl?: string,
 ): RenderedGlyph {
-  const imageData = renderGlyphImageData(glyph, family, weight, sampleFontSize, "#000000");
-  const values = new Float32Array(FEATURE_SIZE * FEATURE_SIZE);
-  const signatureBits: string[] = [];
+  const sample = renderGlyphShapeSample(glyph, family, weight, sampleFontSize);
 
-  for (let index = 0; index < values.length; index += 1) {
-    const offset = index * 4;
-    values[index] = imageData.data[offset + 3] / 255;
-    signatureBits.push(values[index] > 0.02 ? "1" : "0");
-  }
-
-  const initialIntrinsicColor = measureIntrinsicGlyphColor(imageData.data);
+  const initialIntrinsicColor = measureIntrinsicGlyphColor(sample.imageData.data);
   const intrinsicColor =
     initialIntrinsicColor && initialIntrinsicColor.strength >= FULL_INTRINSIC_COLOR_STRENGTH
       ? initialIntrinsicColor
       : shouldProbeIntrinsicGlyphColor(glyph, initialIntrinsicColor)
         ? measureIntrinsicGlyphColor(
-            imageData.data,
+            sample.imageData.data,
             renderGlyphImageData(glyph, family, weight, sampleFontSize, INTRINSIC_COLOR_PROBE).data,
           )
         : initialIntrinsicColor;
@@ -158,12 +150,50 @@ function renderGlyphWithFamily(
       fontSource,
       fontDataUrl,
       weight,
-      features: extractFeatureFromDarkness(values),
+      features: extractFeatureFromDarkness(sample.alphaValues),
       intrinsicColor: intrinsicColor?.color,
       intrinsicColorStrength: intrinsicColor?.strength,
     },
+    signature: sample.signature,
+  };
+}
+
+interface GlyphShapeSample {
+  imageData: ImageData;
+  alphaValues: Float32Array;
+  signature: string;
+}
+
+function renderGlyphShapeSample(
+  glyph: string,
+  family: string,
+  weight: number,
+  sampleFontSize: number,
+): GlyphShapeSample {
+  const imageData = renderGlyphImageData(glyph, family, weight, sampleFontSize, "#000000");
+  const alphaValues = new Float32Array(FEATURE_SIZE * FEATURE_SIZE);
+  const signatureBits: string[] = [];
+
+  for (let index = 0; index < alphaValues.length; index += 1) {
+    const offset = index * 4;
+    alphaValues[index] = imageData.data[offset + 3] / 255;
+    signatureBits.push(alphaValues[index] > 0.02 ? "1" : "0");
+  }
+
+  return {
+    imageData,
+    alphaValues,
     signature: signatureBits.join(""),
   };
+}
+
+function renderGlyphSignatureWithFamily(
+  glyph: string,
+  family: string,
+  weight: number,
+  sampleFontSize: number,
+): string {
+  return renderGlyphShapeSample(glyph, family, weight, sampleFontSize).signature;
 }
 
 function renderGlyphImageData(
@@ -344,7 +374,11 @@ export function shouldFilterAgainstFallbackSignatures(
   return !GENERIC_FAMILIES.has(font.family);
 }
 
-function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: number): Set<string> {
+export function fallbackSignaturesFor(
+  glyph: string,
+  weight: number,
+  sampleFontSize: number,
+): Set<string> {
   const cacheKey = `${glyph}:${weight}:${sampleFontSize}`;
   const cached = fallbackSignatureCache.get(cacheKey);
   if (cached) {
@@ -352,17 +386,8 @@ function fallbackSignaturesFor(glyph: string, weight: number, sampleFontSize: nu
   }
 
   const signatures = new Set(
-    FALLBACK_FAMILIES.map(
-      (family) =>
-        renderGlyphWithFamily(
-          glyph,
-          family,
-          family,
-          `fallback-${family}`,
-          weight,
-          sampleFontSize,
-          "builtin",
-        ).signature,
+    FALLBACK_FAMILIES.map((family) =>
+      renderGlyphSignatureWithFamily(glyph, family, weight, sampleFontSize),
     ),
   );
   fallbackSignatureCache.set(cacheKey, signatures);
