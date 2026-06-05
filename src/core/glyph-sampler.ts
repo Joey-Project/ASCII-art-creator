@@ -142,10 +142,12 @@ function renderGlyphWithFamily(
   const intrinsicColor =
     initialIntrinsicColor && initialIntrinsicColor.strength >= FULL_INTRINSIC_COLOR_STRENGTH
       ? initialIntrinsicColor
-      : measureIntrinsicGlyphColor(
-          imageData.data,
-          renderGlyphImageData(glyph, family, weight, sampleFontSize, INTRINSIC_COLOR_PROBE).data,
-        );
+      : shouldProbeIntrinsicGlyphColor(glyph, initialIntrinsicColor)
+        ? measureIntrinsicGlyphColor(
+            imageData.data,
+            renderGlyphImageData(glyph, family, weight, sampleFontSize, INTRINSIC_COLOR_PROBE).data,
+          )
+        : initialIntrinsicColor;
 
   return {
     candidate: {
@@ -206,11 +208,15 @@ export function measureIntrinsicGlyphColor(
   }
 
   const recolorProbe = recolorProbeData ? summarizeVisibleColor(recolorProbeData) : null;
-  if (recolorProbe && colorDelta(sample, recolorProbe) <= MAX_NATIVE_RECOLOR_DELTA) {
-    return {
-      color: sample.color,
-      strength: 1,
-    };
+  if (recolorProbe) {
+    if (colorDelta(sample, recolorProbe) <= MAX_NATIVE_RECOLOR_DELTA) {
+      return {
+        color: sample.color,
+        strength: 1,
+      };
+    }
+
+    return null;
   }
 
   if (directStrength >= MIN_INTRINSIC_COLOR_STRENGTH) {
@@ -221,6 +227,17 @@ export function measureIntrinsicGlyphColor(
   }
 
   return null;
+}
+
+export function shouldProbeIntrinsicGlyphColor(
+  glyph: string,
+  intrinsicColor: IntrinsicGlyphColor | null,
+): boolean {
+  if (intrinsicColor) {
+    return intrinsicColor.strength < FULL_INTRINSIC_COLOR_STRENGTH;
+  }
+
+  return !isAsciiGrapheme(glyph);
 }
 
 interface VisibleColorSummary {

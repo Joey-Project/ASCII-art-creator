@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   glyphFeatureFontSize,
   measureIntrinsicGlyphColor,
+  shouldProbeIntrinsicGlyphColor,
   shouldFilterAgainstFallbackSignatures,
 } from "../../src/core/glyph-sampler";
 
@@ -59,6 +60,18 @@ describe("glyph sampler", () => {
     expect(measureIntrinsicGlyphColor(weakNative, weakProbe)?.strength).toBe(1);
   });
 
+  it("ignores weak recolorable samples when the probe render changes color", () => {
+    const weakRecolorable = new Uint8ClampedArray([
+      45, 30, 30, 255, 55, 35, 35, 128, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    const recoloredProbe = new Uint8ClampedArray([
+      255, 0, 255, 255, 255, 0, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+
+    expect(measureIntrinsicGlyphColor(weakRecolorable)?.strength).toBeLessThan(0.85);
+    expect(measureIntrinsicGlyphColor(weakRecolorable, recoloredProbe)).toBeNull();
+  });
+
   it("ignores recolorable dark glyphs when the probe render changes color", () => {
     const blackSample = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
     const recoloredProbe = new Uint8ClampedArray([
@@ -75,5 +88,12 @@ describe("glyph sampler", () => {
     expect(measured).not.toBeNull();
     expect(measured?.color).toBe("#aa0055");
     expect(measured?.strength).toBeGreaterThan(0.6);
+  });
+
+  it("limits probe renders to plausible intrinsic-color cases", () => {
+    expect(shouldProbeIntrinsicGlyphColor("A", null)).toBe(false);
+    expect(shouldProbeIntrinsicGlyphColor("🖤", null)).toBe(true);
+    expect(shouldProbeIntrinsicGlyphColor("A", { color: "#402020", strength: 0.2 })).toBe(true);
+    expect(shouldProbeIntrinsicGlyphColor("A", { color: "#ff0000", strength: 0.95 })).toBe(false);
   });
 });

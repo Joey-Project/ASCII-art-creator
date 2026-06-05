@@ -69,6 +69,30 @@ describe("color-aware candidate scoring", () => {
     );
   });
 
+  it("weights weak intrinsic colors in source and uniform strategies", () => {
+    const cell = makeCell("#00cc44");
+    const weakIntrinsic = makeCandidate("◒", 0.5, {
+      intrinsicColor: "#c04040",
+      intrinsicColorStrength: 0.2,
+    });
+    const strongIntrinsic = makeCandidate("🔴", 0.5, {
+      intrinsicColor: "#c04040",
+      intrinsicColorStrength: 1,
+    });
+    const featureScore = 0.1;
+    const weightedPenalty = colorDistance(cell.sourceColor, "#c04040") * 1.45 * 0.2;
+
+    expect(colorScore("source", cell, weakIntrinsic, featureScore)).toBeCloseTo(
+      featureScore + weightedPenalty,
+    );
+    expect(colorScore("uniform", cell, weakIntrinsic, featureScore)).toBeCloseTo(
+      featureScore + weightedPenalty,
+    );
+    expect(colorScore("source", cell, weakIntrinsic, featureScore)).toBeLessThan(
+      colorScore("source", cell, strongIntrinsic, featureScore),
+    );
+  });
+
   it("lets intrinsic glyph color override grouped generated colors", () => {
     const cell = makeCell("#828c18");
     const generatedFarIntrinsicClose = makeCandidate("####", 0.5, {

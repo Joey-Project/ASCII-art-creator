@@ -49,13 +49,16 @@ export function colorAwareCandidateScore(
   candidate: GlyphCandidate,
   featureScore: number,
 ): number {
-  const candidateColor = colorForCandidateSelection(settings, strategy, candidate);
-  if (!candidateColor) {
+  const selectionColor = colorForCandidateSelection(settings, strategy, candidate);
+  if (!selectionColor) {
     return featureScore;
   }
 
   return (
-    featureScore + colorDistance(cell.sourceColor, candidateColor) * COLOR_AWARE_SELECTION_WEIGHT
+    featureScore +
+    colorDistance(cell.sourceColor, selectionColor.color) *
+      COLOR_AWARE_SELECTION_WEIGHT *
+      selectionColor.weight
   );
 }
 
@@ -100,11 +103,16 @@ export function rgbToHex(red: number, green: number, blue: number): string {
   return `#${parts.join("")}`;
 }
 
+interface CandidateSelectionColor {
+  color: string;
+  weight: number;
+}
+
 function colorForCandidateSelection(
   settings: RenderSettings,
   strategy: ColorStrategy,
   candidate: GlyphCandidate,
-): string | null {
+): CandidateSelectionColor | null {
   if (settings.colorMode === "mono") {
     return null;
   }
@@ -114,14 +122,32 @@ function colorForCandidateSelection(
   const assignedColor = assignedCandidateColor(strategy, candidate);
 
   if (intrinsicColor && intrinsicStrength > 0) {
-    if (!assignedColor || intrinsicStrength >= FULL_INTRINSIC_COLOR_STRENGTH) {
-      return intrinsicColor;
+    if (!assignedColor) {
+      return {
+        color: intrinsicColor,
+        weight: intrinsicStrength >= FULL_INTRINSIC_COLOR_STRENGTH ? 1 : intrinsicStrength,
+      };
     }
 
-    return blendColors(assignedColor, intrinsicColor, intrinsicStrength);
+    if (intrinsicStrength >= FULL_INTRINSIC_COLOR_STRENGTH) {
+      return {
+        color: intrinsicColor,
+        weight: 1,
+      };
+    }
+
+    return {
+      color: blendColors(assignedColor, intrinsicColor, intrinsicStrength),
+      weight: 1,
+    };
   }
 
-  return assignedColor;
+  return assignedColor
+    ? {
+        color: assignedColor,
+        weight: 1,
+      }
+    : null;
 }
 
 function assignedCandidateColor(strategy: ColorStrategy, candidate: GlyphCandidate): string | null {
@@ -139,7 +165,7 @@ function assignedCandidateColor(strategy: ColorStrategy, candidate: GlyphCandida
   }
 }
 
-function blendColors(first: string, second: string, amount: number): string | null {
+function blendColors(first: string, second: string, amount: number): string {
   const firstRgb = parseColor(first);
   const secondRgb = parseColor(second);
   if (!firstRgb || !secondRgb) {
