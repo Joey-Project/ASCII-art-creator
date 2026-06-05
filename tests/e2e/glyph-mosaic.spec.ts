@@ -164,7 +164,7 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
   });
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
-  await page.waitForTimeout(700);
+  await waitForFirstDelayedBlobLoad(page);
 
   await expect(page.locator("#source-editor")).toBeHidden();
   await expect(page.locator("#source-name")).toContainText("sample-gradient");
@@ -172,7 +172,7 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
 });
 
 test("ignores stale uploads when generate falls back to the sample", async ({ page }) => {
-  await delayFirstBlobImageLoad(page);
+  await delayFirstBlobImageLoad(page, 2_000);
 
   await page.goto("/");
   await page.locator("#image-input").setInputFiles({
@@ -180,9 +180,11 @@ test("ignores stale uploads when generate falls back to the sample", async ({ pa
     mimeType: "image/png",
     buffer: fixturePngBuffer(),
   });
-  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  const generateButton = page.getByRole("button", { name: "Generate mosaic" });
+  await expect(generateButton).toBeEnabled();
+  await generateButton.click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
-  await page.waitForTimeout(700);
+  await waitForFirstDelayedBlobLoad(page);
 
   await expect(page.locator("#source-editor")).toBeHidden();
   await expect(page.locator("#source-name")).toContainText("sample-gradient");
@@ -253,6 +255,7 @@ test("keeps in-flight generation valid when source edits are cancelled", async (
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await broadenCandidatesForInFlightGeneration(page);
 
   await page.locator("#columns").evaluate((element) => {
     const input = element as HTMLInputElement;
@@ -268,9 +271,6 @@ test("keeps in-flight generation valid when source edits are cancelled", async (
   await expect(page.locator("#rows-output")).toHaveText("180");
 
   await page.getByRole("button", { name: "Generate mosaic" }).click();
-  await expect(page.locator("#status")).toContainText(/Generated|Sampling|Rendering|Building/, {
-    timeout: 5_000,
-  });
   await page.getByRole("button", { name: "Edit source" }).click();
   await expect(page.locator("#source-editor")).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -375,7 +375,7 @@ test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
   const initialCellCount = await statNumber(page, "#cell-count");
   const plannedCandidateCount = await statNumber(page, "#candidate-count");
-  expect(plannedCandidateCount).toBeGreaterThan(500);
+  expect(plannedCandidateCount).toBeGreaterThan(150);
 
   await page.locator("#source-pixels").evaluate((element) => {
     const input = element as HTMLInputElement;
@@ -405,9 +405,11 @@ test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async (
   await page.goto("/");
   await expect(page.getByLabel("User glyphs")).toHaveAttribute(
     "placeholder",
-    /uncheck ASCII to use only this field/,
+    /Added on top of checked packs below/,
   );
-  await expect(page.getByText("User glyphs are added to checked packs")).toBeVisible();
+  await expect(
+    page.getByText("User glyphs are added in addition to all selected packs below"),
+  ).toBeVisible();
   await page.getByLabel("ASCII").uncheck();
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Add at least one glyph");
@@ -435,23 +437,31 @@ test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async (
 });
 
 test("filters fonts with fuzzy and exact search and labels font weights", async ({ page }) => {
+  await mockLocalFontAccess(page);
   await page.goto("/");
 
   await expect(page.getByText("Font weights")).toBeVisible();
   await expect(page.getByText("400 Regular")).toBeVisible();
   await expect(page.getByText("700 Bold")).toBeVisible();
+  await page.getByLabel("400 Regular").click();
+  await expect(page.getByLabel("400 Regular")).toBeChecked();
+  await expect(page.locator("#status")).toContainText("Select at least one font weight");
+  await page.getByLabel("700 Bold").check();
+  await page.getByLabel("400 Regular").uncheck();
+  await page.getByRole("button", { name: "Scan local fonts" }).click();
+  await expect(page.locator("#status")).toContainText("Found 1 new local font family");
+  await page.getByLabel("Search fonts").fill("review local");
+  await expect(page.locator(".font-row").filter({ hasText: "Review Local" })).toContainText("700");
   await expect(page.locator("#font-scan-hint")).toContainText("Local Font Access");
 
   await page.getByLabel("Search fonts").fill("msp");
   await expect(page.getByText("Monospace")).toBeVisible();
-  await expect(page.locator("#font-scan-hint")).toContainText(
-    "2 selected fonts are hidden by search and still included in generation.",
-  );
+  await expect(page.locator("#font-scan-hint")).not.toContainText("selected font");
 
   await page.getByLabel("Exact text match").check();
   await expect(page.getByText("No fonts match this search.")).toBeVisible();
   await expect(page.locator("#font-scan-hint")).toContainText(
-    "3 selected fonts are hidden by search and still included in generation.",
+    "1 selected font is hidden by search and still included in generation.",
   );
 
   await page.getByLabel("Search fonts").fill("mono");
@@ -569,13 +579,65 @@ async function dragEditorCanvas(
   await page.mouse.up();
 }
 
-async function delayFirstBlobImageLoad(page: Page): Promise<void> {
+async function broadenCandidatesForInFlightGeneration(page: Page): Promise<void> {
+  for (const pack of ["CJK", "Kana", "Math Symbols", "Symbols"]) {
+    await page.getByLabel(pack, { exact: true }).check();
+  }
+  await page.locator(".font-row input").evaluateAll((inputs) => {
+    for (const input of inputs as HTMLInputElement[]) {
+      input.checked = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  await page.locator(".weight-checkbox").evaluateAll((inputs) => {
+    for (const input of inputs as HTMLInputElement[]) {
+      input.checked = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  expect(await statNumber(page, "#candidate-count")).toBeGreaterThan(5_000);
+}
+
+async function waitForFirstDelayedBlobLoad(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      Boolean(
+        (
+          window as Window & {
+            __glyphMosaicFirstDelayedBlobLoadSettled?: boolean;
+          }
+        ).__glyphMosaicFirstDelayedBlobLoadSettled,
+      ),
+    undefined,
+    { timeout: 5_000 },
+  );
+}
+
+async function mockLocalFontAccess(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    Object.defineProperty(window, "queryLocalFonts", {
+      configurable: true,
+      value: async () => [
+        {
+          family: "Review Local",
+          fullName: "Review Local Regular",
+          postscriptName: "ReviewLocal-Regular",
+          style: "Regular",
+        },
+      ],
+    });
+  });
+}
+
+async function delayFirstBlobImageLoad(page: Page, delayMs = 350): Promise<void> {
+  await page.addInitScript((configuredDelayMs) => {
+    const markerKey = "__glyphMosaicFirstDelayedBlobLoadSettled";
     const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
     if (!descriptor?.get || !descriptor.set) {
       return;
     }
 
+    (window as unknown as Record<string, boolean>)[markerKey] = false;
     const NativeImage = window.Image;
     let delayedBlobLoads = 0;
     window.Image = function patchedImage(width?: number, height?: number) {
@@ -586,7 +648,17 @@ async function delayFirstBlobImageLoad(page: Page): Promise<void> {
           return descriptor.get!.call(image);
         },
         set(value: string) {
-          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? 350 : 0;
+          const isFirstBlobLoad = value.startsWith("blob:") && delayedBlobLoads === 0;
+          const delay = isFirstBlobLoad ? configuredDelayMs : 0;
+          if (isFirstBlobLoad) {
+            const markSettled = () => {
+              window.setTimeout(() => {
+                (window as unknown as Record<string, boolean>)[markerKey] = true;
+              }, 0);
+            };
+            image.addEventListener("load", markSettled, { once: true });
+            image.addEventListener("error", markSettled, { once: true });
+          }
           delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
           window.setTimeout(() => descriptor.set!.call(image, value), delay);
         },
@@ -594,7 +666,7 @@ async function delayFirstBlobImageLoad(page: Page): Promise<void> {
       return image;
     } as typeof Image;
     window.Image.prototype = NativeImage.prototype;
-  });
+  }, delayMs);
 }
 
 function fixturePngBuffer(): Buffer {

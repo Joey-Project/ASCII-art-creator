@@ -184,10 +184,10 @@ app.innerHTML = `
         <h2>Glyphs</h2>
         <label>
           User glyphs
-          <textarea id="glyph-input" rows="3" spellcheck="false" placeholder="Optional additions. Checked packs below still apply; uncheck ASCII to use only this field."></textarea>
+          <textarea id="glyph-input" rows="3" spellcheck="false" placeholder="Added on top of checked packs below. Uncheck ASCII to use only this field."></textarea>
         </label>
         <div id="glyph-packs" class="checkbox-grid" aria-label="Glyph packs"></div>
-        <p class="hint">User glyphs are added to checked packs. To use only this field, uncheck ASCII and any other packs below.</p>
+        <p class="hint">User glyphs are added in addition to all selected packs below. To use only this field, uncheck ASCII and any other packs.</p>
       </div>
 
       <div class="control-group">
@@ -214,7 +214,7 @@ app.innerHTML = `
           <label><input type="checkbox" class="weight-checkbox" value="300" /> 300 Light</label>
           <label><input type="checkbox" class="weight-checkbox" value="400" checked /> 400 Regular</label>
           <label><input type="checkbox" class="weight-checkbox" value="500" /> 500 Medium</label>
-          <label><input type="checkbox" class="weight-checkbox" value="700" checked /> 700 Bold</label>
+          <label><input type="checkbox" class="weight-checkbox" value="700" /> 700 Bold</label>
           <label><input type="checkbox" class="weight-checkbox" value="900" /> 900 Black</label>
         </div>
       </div>
@@ -467,6 +467,10 @@ function bindControls(): void {
       return;
     }
 
+    const weights = selectedWeights();
+    for (const font of uploaded) {
+      font.weights = weights;
+    }
     state.fonts.push(...uploaded);
     renderFontList();
     markNeedsRegenerate();
@@ -485,13 +489,17 @@ function bindControls(): void {
       const localFonts = await scanLocalFonts();
       const existing = new Set(state.fonts.map((font) => `${font.source}:${font.family}`));
       const newFonts = localFonts.filter((font) => !existing.has(`${font.source}:${font.family}`));
+      const weights = selectedWeights();
+      for (const font of newFonts) {
+        font.weights = weights;
+      }
       state.fonts.push(...newFonts);
       renderFontList();
       if (newFonts.some((font) => font.selected)) {
         markNeedsRegenerate();
       }
       setStatus(
-        `Found ${newFonts.length} new local font families${
+        `Found ${newFonts.length} new local font ${newFonts.length === 1 ? "family" : "families"}${
           localFonts.length > newFonts.length
             ? ` (${localFonts.length.toLocaleString()} available after scan)`
             : ""
@@ -581,7 +589,13 @@ function bindControls(): void {
   );
 
   for (const checkbox of document.querySelectorAll<HTMLInputElement>(".weight-checkbox")) {
-    checkbox.addEventListener("change", () => {
+    checkbox.addEventListener("change", (event) => {
+      const changed = event.target as HTMLInputElement;
+      if (!changed.checked && selectedWeights().length === 0) {
+        changed.checked = true;
+        setStatus("Select at least one font weight");
+        return;
+      }
       const weights = selectedWeights();
       for (const font of state.fonts) {
         font.weights = weights;
@@ -1546,10 +1560,9 @@ function activeGlyphs(): string[] {
 }
 
 function selectedWeights(): number[] {
-  const weights = Array.from(
-    document.querySelectorAll<HTMLInputElement>(".weight-checkbox:checked"),
-  ).map((input) => Number(input.value));
-  return weights.length > 0 ? weights : [400];
+  return Array.from(document.querySelectorAll<HTMLInputElement>(".weight-checkbox:checked")).map(
+    (input) => Number(input.value),
+  );
 }
 
 function drawPreview(): void {

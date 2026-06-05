@@ -20,14 +20,14 @@ export const BUILTIN_FONTS: FontChoice[] = [
     label: "Monospace",
     source: "builtin",
     selected: true,
-    weights: [400, 700],
+    weights: [400],
   },
   {
     id: "builtin-serif",
     family: "serif",
     label: "Serif",
     source: "builtin",
-    selected: true,
+    selected: false,
     weights: [400],
   },
   {
@@ -35,8 +35,8 @@ export const BUILTIN_FONTS: FontChoice[] = [
     family: "sans-serif",
     label: "Sans Serif",
     source: "builtin",
-    selected: true,
-    weights: [400, 700],
+    selected: false,
+    weights: [400],
   },
   {
     id: "builtin-courier",
@@ -44,7 +44,7 @@ export const BUILTIN_FONTS: FontChoice[] = [
     label: "Courier New",
     source: "builtin",
     selected: false,
-    weights: [400, 700],
+    weights: [400],
   },
   {
     id: "builtin-georgia",
@@ -52,7 +52,7 @@ export const BUILTIN_FONTS: FontChoice[] = [
     label: "Georgia",
     source: "builtin",
     selected: false,
-    weights: [400, 700],
+    weights: [400],
   },
   {
     id: "builtin-impact",
@@ -144,7 +144,7 @@ export async function registerUploadedFonts(files: FileList | File[]): Promise<F
       label: file.name,
       source: "uploaded",
       selected: true,
-      weights: [400, 700],
+      weights: [400],
       dataUrl,
     });
   }

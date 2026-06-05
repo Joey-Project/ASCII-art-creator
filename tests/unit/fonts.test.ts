@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { localFontAccessStatus, scanLocalFonts } from "../../src/core/fonts";
+import { BUILTIN_FONTS, localFontAccessStatus, scanLocalFonts } from "../../src/core/fonts";
 
 describe("font helpers", () => {
   afterEach(() => {
@@ -18,6 +18,15 @@ describe("font helpers", () => {
       available: false,
       reason: "Local Font Access is only available in some Chromium desktop browsers.",
     });
+  });
+
+  it("defaults to one built-in font and one weight", () => {
+    expect(BUILTIN_FONTS.filter((font) => font.selected)).toEqual([
+      expect.objectContaining({ id: "builtin-monospace", weights: [400] }),
+    ]);
+    expect(
+      BUILTIN_FONTS.every((font) => font.weights.length === 1 && font.weights[0] === 400),
+    ).toBe(true);
   });
 
   it("deduplicates, sorts, and limits scanned local font families", async () => {
