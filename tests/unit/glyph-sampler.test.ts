@@ -37,6 +37,25 @@ describe("glyph sampler", () => {
     expect(measureIntrinsicGlyphColor(data)).toBeNull();
   });
 
+  it("keeps dark native colors when probe rendering does not recolor the glyph", () => {
+    const darkNative = new Uint8ClampedArray([5, 5, 5, 255, 8, 8, 8, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const darkProbe = new Uint8ClampedArray([6, 6, 6, 255, 9, 9, 9, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const measured = measureIntrinsicGlyphColor(darkNative, darkProbe);
+
+    expect(measured).not.toBeNull();
+    expect(measured?.color).toBe("#060606");
+    expect(measured?.strength).toBe(1);
+  });
+
+  it("ignores recolorable dark glyphs when the probe render changes color", () => {
+    const blackSample = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const recoloredProbe = new Uint8ClampedArray([
+      255, 0, 255, 255, 255, 0, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+
+    expect(measureIntrinsicGlyphColor(blackSample, recoloredProbe)).toBeNull();
+  });
+
   it("measures alpha-weighted intrinsic color from rendered samples", () => {
     const data = new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
     const measured = measureIntrinsicGlyphColor(data);
