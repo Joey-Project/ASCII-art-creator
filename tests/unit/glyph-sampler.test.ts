@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildGlyphCandidates,
   fallbackSignaturesFor,
   glyphFeatureFontSize,
   measureIntrinsicGlyphColor,
   shouldProbeIntrinsicGlyphColor,
   shouldFilterAgainstFallbackSignatures,
 } from "../../src/core/glyph-sampler";
+import type { RenderSettings } from "../../src/domain/types";
 
 describe("glyph sampler", () => {
   afterEach(() => {
@@ -130,4 +132,78 @@ describe("glyph sampler", () => {
 
     expect(fillStyles).toEqual(["#000000", "#000000", "#000000"]);
   });
+
+  it("filters fallback glyphs before intrinsic-color probe sampling", async () => {
+    const fillStyles: string[] = [];
+    let currentGlyph = "";
+    const context = {
+      fillStyle: "",
+      textAlign: "",
+      textBaseline: "",
+      font: "",
+      clearRect: vi.fn(),
+      fillText: vi.fn((glyph: string) => {
+        currentGlyph = glyph;
+        fillStyles.push(context.fillStyle);
+      }),
+      getImageData: vi.fn(() => ({
+        data: imageDataForGlyph(currentGlyph),
+      })),
+    };
+
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({
+        width: 0,
+        height: 0,
+        getContext: vi.fn(() => context),
+      })),
+    });
+
+    const candidates = await buildGlyphCandidates(
+      ["字"],
+      [
+        {
+          id: "uploaded-demo",
+          family: "Uploaded Demo",
+          label: "Uploaded Demo",
+          source: "uploaded",
+          selected: true,
+          weights: [400],
+        },
+      ],
+      sampleSettings,
+    );
+
+    expect(candidates).toEqual([]);
+    expect(fillStyles).not.toContain("#ff00ff");
+  });
 });
+
+const sampleSettings: RenderSettings = {
+  gridMode: "dimensions",
+  columns: 2,
+  rows: 1,
+  sourcePixelsPerGlyph: 12,
+  cellWidth: 12,
+  cellHeight: 18,
+  fontSize: 18,
+  outputScale: 2,
+  colorMode: "color",
+  colorStrategy: "source",
+  foreground: "#111111",
+  background: "#ffffff",
+  transparentBackground: false,
+  useDithering: false,
+  useEdgeMatching: false,
+  densityWindow: 20,
+};
+
+function imageDataForGlyph(glyph: string): Uint8ClampedArray {
+  return glyph === "字" ? imageDataWithAlphaAt(1) : imageDataWithAlphaAt(0);
+}
+
+function imageDataWithAlphaAt(pixelIndex: number): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(18 * 18 * 4);
+  data[pixelIndex * 4 + 3] = 255;
+  return data;
+}

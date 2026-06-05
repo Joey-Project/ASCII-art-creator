@@ -34,6 +34,7 @@ export interface IntrinsicGlyphColor {
 
 interface RenderedGlyph {
   candidate: GlyphCandidate;
+  imageData: ImageData;
   signature: string;
 }
 
@@ -66,7 +67,7 @@ export async function buildGlyphCandidates(
         if (
           isRenderableGlyph(glyph, font, weight, sampleFontSize, rendered, missingGlyphSignatures)
         ) {
-          candidates.push(rendered.candidate);
+          candidates.push(withIntrinsicGlyphColor(rendered, sampleFontSize));
         }
 
         if (completed % 64 === 0) {
@@ -130,17 +131,6 @@ function renderGlyphWithFamily(
 ): RenderedGlyph {
   const sample = renderGlyphShapeSample(glyph, family, weight, sampleFontSize);
 
-  const initialIntrinsicColor = measureIntrinsicGlyphColor(sample.imageData.data);
-  const intrinsicColor =
-    initialIntrinsicColor && initialIntrinsicColor.strength >= FULL_INTRINSIC_COLOR_STRENGTH
-      ? initialIntrinsicColor
-      : shouldProbeIntrinsicGlyphColor(glyph, initialIntrinsicColor)
-        ? measureIntrinsicGlyphColor(
-            sample.imageData.data,
-            renderGlyphImageData(glyph, family, weight, sampleFontSize, INTRINSIC_COLOR_PROBE).data,
-          )
-        : initialIntrinsicColor;
-
   return {
     candidate: {
       id: `${glyph}:${fontId}:${weight}`,
@@ -151,10 +141,34 @@ function renderGlyphWithFamily(
       fontDataUrl,
       weight,
       features: extractFeatureFromDarkness(sample.alphaValues),
-      intrinsicColor: intrinsicColor?.color,
-      intrinsicColorStrength: intrinsicColor?.strength,
     },
+    imageData: sample.imageData,
     signature: sample.signature,
+  };
+}
+
+function withIntrinsicGlyphColor(rendered: RenderedGlyph, sampleFontSize: number): GlyphCandidate {
+  const initialIntrinsicColor = measureIntrinsicGlyphColor(rendered.imageData.data);
+  const intrinsicColor =
+    initialIntrinsicColor && initialIntrinsicColor.strength >= FULL_INTRINSIC_COLOR_STRENGTH
+      ? initialIntrinsicColor
+      : shouldProbeIntrinsicGlyphColor(rendered.candidate.glyph, initialIntrinsicColor)
+        ? measureIntrinsicGlyphColor(
+            rendered.imageData.data,
+            renderGlyphImageData(
+              rendered.candidate.glyph,
+              rendered.candidate.fontFamily,
+              rendered.candidate.weight,
+              sampleFontSize,
+              INTRINSIC_COLOR_PROBE,
+            ).data,
+          )
+        : initialIntrinsicColor;
+
+  return {
+    ...rendered.candidate,
+    intrinsicColor: intrinsicColor?.color,
+    intrinsicColorStrength: intrinsicColor?.strength,
   };
 }
 
