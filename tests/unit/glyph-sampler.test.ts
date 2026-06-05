@@ -47,6 +47,18 @@ describe("glyph sampler", () => {
     expect(measured?.strength).toBe(1);
   });
 
+  it("upgrades weak native colors when the probe render does not recolor the glyph", () => {
+    const weakNative = new Uint8ClampedArray([
+      45, 30, 30, 255, 55, 35, 35, 128, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    const weakProbe = new Uint8ClampedArray([
+      47, 31, 31, 255, 57, 36, 36, 128, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+
+    expect(measureIntrinsicGlyphColor(weakNative)?.strength).toBeLessThan(0.85);
+    expect(measureIntrinsicGlyphColor(weakNative, weakProbe)?.strength).toBe(1);
+  });
+
   it("ignores recolorable dark glyphs when the probe render changes color", () => {
     const blackSample = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
     const recoloredProbe = new Uint8ClampedArray([

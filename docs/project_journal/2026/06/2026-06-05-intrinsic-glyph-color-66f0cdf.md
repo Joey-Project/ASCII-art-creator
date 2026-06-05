@@ -21,7 +21,7 @@ superseded_by:
 ## Current State
 
 - Glyph sampling still extracts alpha/density features for shape matching, but now also records an alpha-weighted average intrinsic color and a color-strength score when rendered pixels are visibly non-black.
-- Dark native glyphs are checked with a high-saturation probe render so emoji such as black circles or hearts are still recognized as intrinsic colored glyphs instead of recolorable text.
+- Dark or desaturated native glyphs are checked with a high-saturation probe render so emoji such as black circles or hearts are still recognized as intrinsic colored glyphs instead of recolorable text.
 - In color mode, strong intrinsic glyph color overrides app-assigned grouping color for candidate scoring; weaker intrinsic color blends with the assigned color.
 - Source and uniform strategies remain feature-only for recolorable glyphs, but intrinsic colored glyphs compare their sampled native color against the source cell average.
 - Mono mode remains feature-only so grayscale matching behavior is unchanged.
@@ -34,5 +34,5 @@ superseded_by:
 ## Evidence
 
 - Validation: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`
-- Unit coverage: 10 files / 56 tests passed
+- Unit coverage: 10 files / 57 tests passed
 - E2E coverage: 33 passed / 5 skipped across desktop and mobile projects

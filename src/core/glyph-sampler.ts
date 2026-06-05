@@ -21,6 +21,7 @@ const GENERIC_FAMILIES = new Set([
   "system-ui",
 ]);
 const INTRINSIC_COLOR_PROBE = "#ff00ff";
+const FULL_INTRINSIC_COLOR_STRENGTH = 0.85;
 const MIN_INTRINSIC_VISIBLE_ALPHA = 0.01;
 const MIN_INTRINSIC_COLOR_STRENGTH = 0.08;
 const MAX_NATIVE_RECOLOR_DELTA = 0.08;
@@ -137,12 +138,14 @@ function renderGlyphWithFamily(
     signatureBits.push(values[index] > 0.02 ? "1" : "0");
   }
 
+  const initialIntrinsicColor = measureIntrinsicGlyphColor(imageData.data);
   const intrinsicColor =
-    measureIntrinsicGlyphColor(imageData.data) ??
-    measureIntrinsicGlyphColor(
-      imageData.data,
-      renderGlyphImageData(glyph, family, weight, sampleFontSize, INTRINSIC_COLOR_PROBE).data,
-    );
+    initialIntrinsicColor && initialIntrinsicColor.strength >= FULL_INTRINSIC_COLOR_STRENGTH
+      ? initialIntrinsicColor
+      : measureIntrinsicGlyphColor(
+          imageData.data,
+          renderGlyphImageData(glyph, family, weight, sampleFontSize, INTRINSIC_COLOR_PROBE).data,
+        );
 
   return {
     candidate: {
@@ -195,7 +198,7 @@ export function measureIntrinsicGlyphColor(
   }
 
   const directStrength = Math.max(sample.luminanceSignal, sample.chromaSignal);
-  if (directStrength >= MIN_INTRINSIC_COLOR_STRENGTH) {
+  if (directStrength >= FULL_INTRINSIC_COLOR_STRENGTH) {
     return {
       color: sample.color,
       strength: clamp01(directStrength),
@@ -207,6 +210,13 @@ export function measureIntrinsicGlyphColor(
     return {
       color: sample.color,
       strength: 1,
+    };
+  }
+
+  if (directStrength >= MIN_INTRINSIC_COLOR_STRENGTH) {
+    return {
+      color: sample.color,
+      strength: clamp01(directStrength),
     };
   }
 
