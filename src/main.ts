@@ -1700,6 +1700,7 @@ function applyColorSelectionChange(update: () => void): void {
   const nextSelectionKey = candidateColorSelectionKey(state.settings);
 
   if (previousSelectionKey !== nextSelectionKey) {
+    applyVisualSettingsToMosaic();
     markNeedsRegenerate();
     return;
   }

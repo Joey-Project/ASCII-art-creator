@@ -373,8 +373,10 @@ test("requires regeneration when grouped color scoring settings change", async (
 
   await page.getByRole("button", { name: "Color" }).click();
   await expect(page.locator("#status")).toContainText("Visual settings updated");
+  const sourceColorPreview = await previewCanvasDataUrl(page);
 
   await page.getByLabel("Color strategy").selectOption("glyph");
+  await expect.poll(() => previewCanvasDataUrl(page)).not.toBe(sourceColorPreview);
   await expect(page.locator("#status")).toContainText("Settings changed");
   await page.getByRole("button", { name: "TXT" }).click();
   await expect(page.locator("#status")).toContainText(
@@ -384,7 +386,9 @@ test("requires regeneration when grouped color scoring settings change", async (
   await page.getByRole("button", { name: "Generate mosaic" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
 
+  const glyphColorPreview = await previewCanvasDataUrl(page);
   await page.getByLabel("Color strategy").selectOption("source");
+  await expect.poll(() => previewCanvasDataUrl(page)).not.toBe(glyphColorPreview);
   await expect(page.locator("#status")).toContainText("Settings changed");
 });
 
@@ -633,6 +637,12 @@ async function waitForFirstDelayedBlobLoad(page: Page): Promise<void> {
     undefined,
     { timeout: 5_000 },
   );
+}
+
+async function previewCanvasDataUrl(page: Page): Promise<string> {
+  return page
+    .locator("#preview-canvas")
+    .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL("image/png"));
 }
 
 async function mockLocalFontAccess(page: Page): Promise<void> {

@@ -23,6 +23,7 @@ superseded_by:
 - `glyph`, `font`, and `glyph-font` color strategies add a bounded RGB-distance penalty between the source cell average color and the candidate's grouped foreground color.
 - `source` and `uniform` strategies remain feature-only during candidate selection because candidate color is either already the source color or identical for every candidate.
 - Switching into, between, or out of grouped color strategies marks the current mosaic stale so exports cannot reuse glyphs chosen under a different selection policy.
+- The preview still redraws immediately for grouped color strategy changes, so users can see the visual color strategy update before regenerating candidate choices.
 - The matcher now accepts an optional candidate scoring hook, allowing future worker or index implementations to keep feature indexing separate from caller-specific ranking policy.
 
 ## Next Steps
