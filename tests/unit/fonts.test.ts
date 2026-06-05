@@ -24,6 +24,9 @@ describe("font helpers", () => {
     expect(BUILTIN_FONTS.filter((font) => font.selected)).toEqual([
       expect.objectContaining({ id: "builtin-monospace", weights: [400] }),
     ]);
+    expect(
+      BUILTIN_FONTS.every((font) => font.weights.length === 1 && font.weights[0] === 400),
+    ).toBe(true);
   });
 
   it("deduplicates, sorts, and limits scanned local font families", async () => {

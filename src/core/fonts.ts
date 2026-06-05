@@ -44,7 +44,7 @@ export const BUILTIN_FONTS: FontChoice[] = [
     label: "Courier New",
     source: "builtin",
     selected: false,
-    weights: [400, 700],
+    weights: [400],
   },
   {
     id: "builtin-georgia",
@@ -52,7 +52,7 @@ export const BUILTIN_FONTS: FontChoice[] = [
     label: "Georgia",
     source: "builtin",
     selected: false,
-    weights: [400, 700],
+    weights: [400],
   },
   {
     id: "builtin-impact",
