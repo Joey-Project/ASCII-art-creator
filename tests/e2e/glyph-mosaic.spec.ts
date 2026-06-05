@@ -164,7 +164,7 @@ test("ignores stale uploads when another source is loaded first", async ({ page 
   });
   await page.getByRole("button", { name: "Load sample" }).click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
-  await page.waitForTimeout(700);
+  await waitForFirstDelayedBlobLoad(page);
 
   await expect(page.locator("#source-editor")).toBeHidden();
   await expect(page.locator("#source-name")).toContainText("sample-gradient");
@@ -184,7 +184,7 @@ test("ignores stale uploads when generate falls back to the sample", async ({ pa
   await expect(generateButton).toBeEnabled();
   await generateButton.click();
   await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
-  await page.waitForTimeout(700);
+  await waitForFirstDelayedBlobLoad(page);
 
   await expect(page.locator("#source-editor")).toBeHidden();
   await expect(page.locator("#source-name")).toContainText("sample-gradient");
@@ -588,13 +588,30 @@ async function broadenCandidatesForInFlightGeneration(page: Page): Promise<void>
   expect(await statNumber(page, "#candidate-count")).toBeGreaterThan(5_000);
 }
 
+async function waitForFirstDelayedBlobLoad(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      Boolean(
+        (
+          window as Window & {
+            __glyphMosaicFirstDelayedBlobLoadSettled?: boolean;
+          }
+        ).__glyphMosaicFirstDelayedBlobLoadSettled,
+      ),
+    undefined,
+    { timeout: 5_000 },
+  );
+}
+
 async function delayFirstBlobImageLoad(page: Page, delayMs = 350): Promise<void> {
   await page.addInitScript((configuredDelayMs) => {
+    const markerKey = "__glyphMosaicFirstDelayedBlobLoadSettled";
     const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
     if (!descriptor?.get || !descriptor.set) {
       return;
     }
 
+    (window as unknown as Record<string, boolean>)[markerKey] = false;
     const NativeImage = window.Image;
     let delayedBlobLoads = 0;
     window.Image = function patchedImage(width?: number, height?: number) {
@@ -605,7 +622,17 @@ async function delayFirstBlobImageLoad(page: Page, delayMs = 350): Promise<void>
           return descriptor.get!.call(image);
         },
         set(value: string) {
-          const delay = value.startsWith("blob:") && delayedBlobLoads === 0 ? configuredDelayMs : 0;
+          const isFirstBlobLoad = value.startsWith("blob:") && delayedBlobLoads === 0;
+          const delay = isFirstBlobLoad ? configuredDelayMs : 0;
+          if (isFirstBlobLoad) {
+            const markSettled = () => {
+              window.setTimeout(() => {
+                (window as unknown as Record<string, boolean>)[markerKey] = true;
+              }, 0);
+            };
+            image.addEventListener("load", markSettled, { once: true });
+            image.addEventListener("error", markSettled, { once: true });
+          }
           delayedBlobLoads += value.startsWith("blob:") ? 1 : 0;
           window.setTimeout(() => descriptor.set!.call(image, value), delay);
         },
