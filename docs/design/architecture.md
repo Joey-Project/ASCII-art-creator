@@ -63,20 +63,20 @@ Rules:
 
 Both source cells and glyph candidates should use comparable features:
 
-- Luminance or density for base brightness matching.
+- Luminance or density for base brightness matching, using linear-light source luminance so density buckets and color projection share the same coverage semantics.
 - Local block density for two-dimensional shape matching.
 - Sobel-style edge direction to prefer line glyphs such as `/`, `\`, `|`, `-`, and `_` when they match local structure.
 - Local contrast to keep outlines legible.
 - Optional dithering, such as Floyd-Steinberg style error diffusion over density, to simulate additional gray levels.
 
-For color output, glyph selection should still express lightness and texture, while foreground color can come from source image sampling or user-selected grouping rules. When color influence is enabled, the matcher projects each candidate's expected average output color by blending the active background with the candidate foreground according to glyph density, then adds a bounded RGB-distance penalty against the source cell's average color. This lets strong color changes steer the cell toward a different candidate without disabling the density bucket prefilter or replacing the shape score. Intrinsic colored glyphs use their sampled native color as the candidate color signal; strong native color, such as color emoji, overrides app-assigned grouping color for scoring because browser rendering may ignore `fillStyle`.
+For color output, glyph selection should still express lightness and texture, while foreground color can come from source image sampling or user-selected grouping rules. Source analysis alpha-composites transparent pixels over white in linear light, derives density from linear luminance, and averages source color in linear sRGB before encoding it for rendering. When color influence is enabled, the matcher projects each candidate's expected average output color by blending the active background with the candidate foreground according to glyph density in linear sRGB, then adds a bounded Oklab-distance penalty against the source cell's average color. This lets strong color changes steer the cell toward a different candidate without disabling the density bucket prefilter or replacing the shape score. Intrinsic colored glyphs use their sampled native color as the candidate color signal; strong native color, such as color emoji, overrides app-assigned grouping color for scoring because browser rendering may ignore `fillStyle`.
 
 ## Performance Strategy
 
 Feature extraction and matching should run in Web Workers once the library or grid becomes large. The initial matching path should use a staged search:
 
 - Bucket candidates by brightness/density and only compare nearby buckets.
-- Within buckets, rank by weighted feature distance, optionally plus projected output color distance.
+- Within buckets, rank by weighted feature distance, optionally plus projected output color distance in Oklab.
 - Add KD-tree or approximate nearest-neighbor indexing when candidate count makes bucket search too slow.
 - Use progressive rendering so the preview can update quickly before the full-resolution export grid completes.
 
@@ -93,7 +93,7 @@ Supported color strategies:
 - By font: assign colors by font family; candidate selection also prefers projected font colors closer to the source cell average color.
 - By glyph-font combination: assign colors by the full `glyph + font + weight` candidate; candidate selection also prefers projected grouped colors closer to the source cell average color.
 
-The Color influence slider scales the projected color penalty from `0` to `2`. `0` disables color-aware selection and keeps candidate matching feature-only; `1` is the default balanced setting; values above `1` make source-average color more willing to beat a slightly better shape or texture match. Mono mode remains feature-only; intrinsic color is detected but does not alter grayscale matching.
+The Color influence slider scales the projected color penalty from `0` to `2`. `0` disables color-aware selection and keeps candidate matching feature-only; `1` is the default balanced setting; values above `1` make source-average color more willing to beat a slightly better shape or texture match. Projection blends coverage in linear light, and distance is computed after conversion to Oklab rather than with gamma-coded RGB channels. Mono mode remains feature-only; intrinsic color is detected but does not alter grayscale matching.
 
 Because projected color can affect candidate selection in color mode, changing color strategy, color influence, background/transparent-background semantics, or uniform foreground can mark the existing mosaic stale and require regeneration before export. Visual-only color changes still redraw the preview immediately when the candidate-selection key is unchanged.
 

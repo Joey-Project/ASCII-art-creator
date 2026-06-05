@@ -32,7 +32,7 @@ const baseSettings: RenderSettings = {
 describe("color-aware candidate scoring", () => {
   it("measures generated HSL colors against sampled source hex colors", () => {
     expect(colorDistance(colorFromString("A"), "#828c18")).toBeLessThan(0.01);
-    expect(colorDistance(colorFromString("####"), "#828c18")).toBeGreaterThan(0.35);
+    expect(colorDistance(colorFromString("####"), "#828c18")).toBeGreaterThan(0.25);
   });
 
   it("penalizes grouped candidate colors that are far from the source average", () => {
@@ -97,18 +97,28 @@ describe("color-aware candidate scoring", () => {
       intrinsicColorStrength: 1,
     });
     const featureScore = 0.1;
-    const sourcePenalty = colorDistance(cell.sourceColor, "#93d8a1") * 1.45;
-    const uniformPenalty = colorDistance(cell.sourceColor, "#9a8d8d") * 1.45;
+    const sourceScore = colorScore("source", cell, weakIntrinsic, featureScore);
+    const uniformScore = colorScore("uniform", cell, weakIntrinsic, featureScore);
 
-    expect(colorScore("source", cell, weakIntrinsic, featureScore)).toBeCloseTo(
-      featureScore + sourcePenalty,
-    );
-    expect(colorScore("uniform", cell, weakIntrinsic, featureScore)).toBeCloseTo(
-      featureScore + uniformPenalty,
-    );
-    expect(colorScore("source", cell, weakIntrinsic, featureScore)).toBeLessThan(
-      colorScore("source", cell, strongIntrinsic, featureScore),
-    );
+    expect(sourceScore).toBeGreaterThan(featureScore);
+    expect(uniformScore).toBeGreaterThan(featureScore);
+    expect(sourceScore).toBeLessThan(uniformScore);
+    expect(sourceScore).toBeLessThan(colorScore("source", cell, strongIntrinsic, featureScore));
+  });
+
+  it("projects glyph coverage with linear-light blending before Oklab distance", () => {
+    const cell = makeCell("#bcbcbc");
+    const halfCoverage = makeCandidate("=", 0.5);
+    const linearBlendSettings = {
+      ...baseSettings,
+      colorStrategy: "uniform" as const,
+      foreground: "#ffffff",
+      background: "#000000",
+    };
+
+    expect(
+      colorAwareCandidateScore(linearBlendSettings, "uniform", cell, halfCoverage, 0.12),
+    ).toBeCloseTo(0.12, 2);
   });
 
   it("scales the color penalty with color influence", () => {
