@@ -335,6 +335,37 @@ test("contains the desktop preview by default and supports preview zoom controls
     .toBeLessThan(wheelZoomWidth);
 });
 
+test("fits small desktop previews up to the available frame", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop project only");
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.locator("#columns").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "24";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#rows").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "12";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const frame = await page.locator(".preview-frame").boundingBox();
+  const canvas = await page.locator("#preview-canvas").boundingBox();
+  expect(frame).not.toBeNull();
+  expect(canvas).not.toBeNull();
+  expect(canvas!.width).toBeGreaterThan(500);
+  expect(canvas!.height).toBeGreaterThan(300);
+  expect(canvas!.width).toBeLessThanOrEqual(frame!.width + 1);
+  expect(canvas!.height).toBeLessThanOrEqual(frame!.height + 1);
+  expect(Math.min(frame!.width - canvas!.width, frame!.height - canvas!.height)).toBeLessThan(40);
+});
+
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("User glyphs").fill("漢字🙂");

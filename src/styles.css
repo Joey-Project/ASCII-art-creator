@@ -275,15 +275,29 @@ input[type="file"] {
 
 .workspace {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "toolbar"
+    "preview"
+    "stats";
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   padding: 20px;
   gap: 16px;
 }
 
+.workspace:has(.source-editor:not([hidden])) {
+  grid-template-areas:
+    "toolbar"
+    "editor"
+    "preview"
+    "stats";
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
 .toolbar {
   display: grid;
+  grid-area: toolbar;
   gap: 10px;
   min-width: 0;
 }
@@ -343,6 +357,7 @@ input[type="file"] {
 
 .source-editor {
   display: grid;
+  grid-area: editor;
   gap: 10px;
   min-width: 0;
 }
@@ -415,6 +430,7 @@ input[type="file"] {
 
 .preview-frame {
   display: grid;
+  grid-area: preview;
   align-items: safe center;
   justify-items: safe center;
   min-height: 0;
@@ -445,6 +461,7 @@ input[type="file"] {
 }
 
 .stats {
+  grid-area: stats;
   color: #4f5b5e;
   font-size: 13px;
 }
