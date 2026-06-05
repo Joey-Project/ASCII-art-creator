@@ -1601,7 +1601,7 @@ function containPreviewScale(naturalSize: { width: number; height: number }): nu
     return 1;
   }
 
-  return Math.min(1, frameWidth / naturalSize.width, frameHeight / naturalSize.height);
+  return Math.min(frameWidth / naturalSize.width, frameHeight / naturalSize.height);
 }
 
 function cssPixels(value: string): number {
