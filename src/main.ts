@@ -489,13 +489,17 @@ function bindControls(): void {
       const localFonts = await scanLocalFonts();
       const existing = new Set(state.fonts.map((font) => `${font.source}:${font.family}`));
       const newFonts = localFonts.filter((font) => !existing.has(`${font.source}:${font.family}`));
+      const weights = selectedWeights();
+      for (const font of newFonts) {
+        font.weights = weights;
+      }
       state.fonts.push(...newFonts);
       renderFontList();
       if (newFonts.some((font) => font.selected)) {
         markNeedsRegenerate();
       }
       setStatus(
-        `Found ${newFonts.length} new local font families${
+        `Found ${newFonts.length} new local font ${newFonts.length === 1 ? "family" : "families"}${
           localFonts.length > newFonts.length
             ? ` (${localFonts.length.toLocaleString()} available after scan)`
             : ""

@@ -437,6 +437,7 @@ test("uses explicitly provided non-ASCII glyphs when ASCII is disabled", async (
 });
 
 test("filters fonts with fuzzy and exact search and labels font weights", async ({ page }) => {
+  await mockLocalFontAccess(page);
   await page.goto("/");
 
   await expect(page.getByText("Font weights")).toBeVisible();
@@ -445,6 +446,12 @@ test("filters fonts with fuzzy and exact search and labels font weights", async 
   await page.getByLabel("400 Regular").click();
   await expect(page.getByLabel("400 Regular")).toBeChecked();
   await expect(page.locator("#status")).toContainText("Select at least one font weight");
+  await page.getByLabel("700 Bold").check();
+  await page.getByLabel("400 Regular").uncheck();
+  await page.getByRole("button", { name: "Scan local fonts" }).click();
+  await expect(page.locator("#status")).toContainText("Found 1 new local font family");
+  await page.getByLabel("Search fonts").fill("review local");
+  await expect(page.locator(".font-row").filter({ hasText: "Review Local" })).toContainText("700");
   await expect(page.locator("#font-scan-hint")).toContainText("Local Font Access");
 
   await page.getByLabel("Search fonts").fill("msp");
@@ -604,6 +611,22 @@ async function waitForFirstDelayedBlobLoad(page: Page): Promise<void> {
     undefined,
     { timeout: 5_000 },
   );
+}
+
+async function mockLocalFontAccess(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "queryLocalFonts", {
+      configurable: true,
+      value: async () => [
+        {
+          family: "Review Local",
+          fullName: "Review Local Regular",
+          postscriptName: "ReviewLocal-Regular",
+          style: "Regular",
+        },
+      ],
+    });
+  });
 }
 
 async function delayFirstBlobImageLoad(page: Page, delayMs = 350): Promise<void> {
