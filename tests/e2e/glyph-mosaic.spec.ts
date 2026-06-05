@@ -335,6 +335,37 @@ test("contains the desktop preview by default and supports preview zoom controls
     .toBeLessThan(wheelZoomWidth);
 });
 
+test("fits small desktop previews up to the available frame", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop project only");
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  await page.locator("#columns").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "24";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator("#rows").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "12";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.getByRole("button", { name: "Generate mosaic" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+
+  const frame = await page.locator(".preview-frame").boundingBox();
+  const canvas = await page.locator("#preview-canvas").boundingBox();
+  expect(frame).not.toBeNull();
+  expect(canvas).not.toBeNull();
+  expect(canvas!.width).toBeGreaterThan(500);
+  expect(canvas!.height).toBeGreaterThan(300);
+  expect(canvas!.width).toBeLessThanOrEqual(frame!.width + 1);
+  expect(canvas!.height).toBeLessThanOrEqual(frame!.height + 1);
+  expect(Math.min(frame!.width - canvas!.width, frame!.height - canvas!.height)).toBeLessThan(40);
+});
+
 test("supports explicit non-ASCII glyph packs and source-pixel grid mode", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("User glyphs").fill("漢字🙂");
@@ -459,6 +490,58 @@ test("keeps the mobile layout usable", async ({ page, isMobile }) => {
   expect(workspace!.y).toBeGreaterThan(controls!.y);
 });
 
+test("fits portrait mobile previews to the available width", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "mobile project only");
+
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "portrait.svg",
+    mimeType: "image/svg+xml",
+    buffer: portraitSvgBuffer(),
+  });
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.getByRole("button", { name: "Fit preview" }).click();
+
+  const frame = await page.locator(".preview-frame").boundingBox();
+  const canvas = await page.locator("#preview-canvas").boundingBox();
+  expect(frame).not.toBeNull();
+  expect(canvas).not.toBeNull();
+  expect(canvas!.height).toBeLessThanOrEqual(frame!.height + 1);
+  expect(canvas!.width).toBeGreaterThan(frame!.width - 32);
+});
+
+test("refits mobile previews after viewport height shrinks", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "mobile project only");
+
+  await page.setViewportSize({ width: 390, height: 1100 });
+  await page.goto("/");
+  await page.locator("#image-input").setInputFiles({
+    name: "portrait.svg",
+    mimeType: "image/svg+xml",
+    buffer: portraitSvgBuffer(),
+  });
+  await expect(page.locator("#source-editor")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.locator("#status")).toContainText("Mosaic ready", { timeout: 30_000 });
+  await page.getByRole("button", { name: "Fit preview" }).click();
+  const tallCanvas = await page.locator("#preview-canvas").boundingBox();
+  expect(tallCanvas).not.toBeNull();
+
+  await page.setViewportSize({ width: 390, height: 500 });
+  await expect
+    .poll(async () => {
+      const frame = await page.locator(".preview-frame").boundingBox();
+      const canvas = await page.locator("#preview-canvas").boundingBox();
+      return frame && canvas ? canvas.height <= frame.height + 1 : false;
+    })
+    .toBe(true);
+  const shortCanvas = await page.locator("#preview-canvas").boundingBox();
+  expect(shortCanvas).not.toBeNull();
+  expect(shortCanvas!.height).toBeLessThan(tallCanvas!.height);
+});
+
 async function statNumber(page: Page, selector: string): Promise<number> {
   const text = await page.locator(selector).textContent();
   const match = text?.match(/\d[\d,]*/);
@@ -518,6 +601,17 @@ function fixturePngBuffer(): Buffer {
   return Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAgklEQVR4nO3ZwQnAIBAFwYz779l2UBG8BKUIgeA2EJh99p5hMElvG8/rCwD8kUBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQOB1rfu+p6PrnYvLWlQdVx9bMwcC5JOTmXMhICAAAAAAAAAAAAB4Gg+KOQdKPkSrjAAAAABJRU5ErkJggg==",
     "base64",
+  );
+}
+
+function portraitSvgBuffer(): Buffer {
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1206" viewBox="0 0 800 1206">
+      <rect width="800" height="1206" fill="#eef7ff"/>
+      <circle cx="400" cy="270" r="190" fill="#4fc3d1"/>
+      <path d="M175 560 C285 430 515 430 625 560 L710 1110 L90 1110 Z" fill="#1f6b63"/>
+      <path d="M235 635 L565 635 L515 1020 L285 1020 Z" fill="#fbfcfb"/>
+    </svg>`,
   );
 }
 
