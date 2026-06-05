@@ -479,7 +479,8 @@ input[type="file"] {
   }
 
   .workspace {
-    min-height: 70vh;
+    min-height: 100vh;
+    min-height: 100svh;
   }
 }
 
@@ -509,6 +510,10 @@ input[type="file"] {
 
   .editor-commit-actions button {
     flex: 1 1 110px;
+  }
+
+  .preview-frame {
+    padding: 8px;
   }
 
   .brand h1 {
