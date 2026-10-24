@@ -1,11 +1,11 @@
 ---
 id: 20261024-v2212-event
-title: Codex Review Gate Event Upgrade
+title: Codex Review Gate v2.2.13 Consumer Event Upgrade
 status: completed
 created: 2026-10-24
 updated: 2026-10-24
-branch:
-pr:
+branch: wip/review-gate-stacked-retarget
+pr: https://github.com/Joey-Project/ASCII-art-creator/pull/16
 supersedes: []
 superseded_by:
 ---
@@ -14,17 +14,17 @@ superseded_by:
 
 ## Summary
 
-- Updated the canonical v2.2.12 verifier/controller pair for default-branch consumers handling edited and native stacked pull requests.
+- Replaced the v2.2.12 edited-event bypass with the canonical v2.2.13 verifier/controller pair.
 
 ## Current State
 
-- Non-base pull-request edits retain an ignored verifier job, distinct run title, and isolated concurrency group; base-retarget edits and stacked pull requests follow the normal verifier path.
-- The controller refreshes only expected `codex-review-gate-verifier/` workflow runs and isolates unrelated workflow runs.
-- The floating `@v2` action, configurable runner-label macro and fallback, review-request token mapping, auto-request setting, limits profile, and permission envelope remain canonical.
-- Production rulesets and live repository state were not changed by this consumer-file update.
+- All six configured `pull_request` activity types now run the same verifier job. Edited events no longer skip the check or use a dynamic ignored-edit run title.
+- The stable `codex-review-gate-verifier/<PR>/<SHA>` title matches the controller's expected workflow-run prefix. Verifier concurrency remains scoped to one cancellable group per pull request.
+- The controller is unchanged. The floating `@v2` action, configurable runner labels and fallback, token and request settings, limits profile, and permission envelope remain canonical.
+- No production rulesets or repository settings were changed.
 
 ## Evidence
 
-- Verifier and controller bytes match source commit `0746d53b8f5dc4851f6f3dfe63913d12cf53f807` (Git blobs `b7d5f846fb2af067f7a2bd03c060544a4ff4ac34` and `123137c518f53238183616695dae0246bb5402ca`).
-- Exported canonical workflow validators accepted both files; `git diff --check` passed.
-- The targeted canonical bootstrap contract test passed. Installed actionlint 1.7.12 rejects `stacked` as an unknown `pull_request` activity type on the canonical source as well as this consumer.
+- Both workflow files match the v2.2.13 canonical consumer pair byte-for-byte. Exported canonical validators and `git diff --check` pass.
+- Installed actionlint 1.7.12 reports only `invalid activity type "stacked" for "pull_request" Webhook event.`; the same known schema limitation applies to the canonical verifier.
+- These are local workflow checks only; no remote CI or runtime execution is claimed.
